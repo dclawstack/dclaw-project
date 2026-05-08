@@ -1,50 +1,50 @@
-# PRODUCT-SPEC: CRM
+# PRODUCT-SPEC: Project
 
 ## Overview
 
-**App Name:** CRM
-**Domain:** Customer Relationship Management
-**Target User:** Sales teams, account managers
+**App Name:** Project
+**Domain:** Task management, Gantt charts, team collaboration
+**Target User:** Project managers, team leads, developers
 
 ## Core Entities
 
-### Customer
+### Project
 ```
-Customer
+Project
 ├── id: UUID (PK)
 ├── name: str (required)
-├── email: str (unique, required)
-├── phone: str (optional)
-├── company: str (optional)
-├── status: enum ["lead", "active", "churned"] (default: "lead")
-├── notes: str (optional)
+├── description: str (optional)
+├── status: enum ["planning", "active", "on_hold", "completed", "cancelled"] (default: "planning")
+├── start_date: date (optional)
+├── end_date: date (optional)
+├── owner: str (required)
 ├── created_at: datetime
 └── updated_at: datetime
 ```
 
-### Deal
+### Task
 ```
-Deal
+Task
 ├── id: UUID (PK)
-├── customer_id: UUID (FK → Customer, ondelete=CASCADE)
+├── project_id: UUID (FK → Project, ondelete=CASCADE)
 ├── title: str (required)
-├── value: float (required, default 0)
-├── stage: enum ["prospecting", "qualification", "proposal", "negotiation", "closed_won", "closed_lost"] (default: "prospecting")
-├── probability: int (0-100, default 0)
-├── expected_close_date: date (optional)
+├── description: str (optional)
+├── status: enum ["todo", "in_progress", "review", "done"] (default: "todo")
+├── priority: enum ["low", "medium", "high", "urgent"] (default: "medium")
+├── assignee: str (optional)
+├── due_date: date (optional)
 ├── created_at: datetime
 └── updated_at: datetime
 ```
 
-### Activity
+### Milestone
 ```
-Activity
+Milestone
 ├── id: UUID (PK)
-├── deal_id: UUID (FK → Deal, ondelete=CASCADE, optional)
-├── customer_id: UUID (FK → Customer, ondelete=CASCADE)
-├── activity_type: enum ["call", "email", "meeting", "note"] (required)
-├── description: str (required)
-├── scheduled_at: datetime (optional)
+├── project_id: UUID (FK → Project, ondelete=CASCADE)
+├── name: str (required)
+├── description: str (optional)
+├── target_date: date (required)
 ├── completed: bool (default false)
 ├── created_at: datetime
 └── updated_at: datetime
@@ -53,70 +53,55 @@ Activity
 ## User Stories / Screens
 
 ### Screen 1: Dashboard
-- Summary cards: total customers, open deals, total pipeline value, win rate
-- Recent activities feed
-- Deals by stage bar chart
-- Quick action buttons (add customer, add deal, log activity)
+- Summary cards: active projects, tasks due today, completed tasks, overdue tasks
+- Projects by status pie chart (mock)
+- Recent tasks list
 
-### Screen 2: Customers
-- Table view with pagination, search by name/email/company
-- Status filter (lead/active/churned)
-- Bulk delete
-- "Add Customer" modal/form
+### Screen 2: Projects
+- Card grid showing project name, status, progress bar, date range
+- Status filter
+- "Add Project" form
 
-### Screen 3: Customer Detail
-- Customer info card with edit/delete
-- Related deals list
-- Related activities timeline
-- Add deal / add activity buttons
+### Screen 3: Project Detail
+- Project info with edit/delete
+- Task board (Kanban: todo → in_progress → review → done)
+- Milestones list with progress
+- "Add Task" and "Add Milestone" buttons
 
-### Screen 4: Deals
-- Kanban board view by stage (prospecting → closed_won/lost)
-- Table view toggle
-- Search and filter by customer, stage, value
-- "Add Deal" form with customer dropdown
-
-### Screen 5: Deal Detail
-- Deal info with edit/delete
-- Probability slider
-- Related activities
-- Move stage buttons
-
-### Screen 6: Activities
-- Timeline view of all activities
-- Filter by type, customer, deal
-- Mark complete / incomplete
+### Screen 4: Task Detail
+- Task info with status dropdown, priority selector, assignee input
+- Edit / delete
+- Due date display
 
 ## AI Features
 
-- **Deal sentiment analysis:** Analyze customer emails/notes for positive/negative sentiment
-- **Next best action:** Recommend next activity based on deal stage and last contact
-- **Win probability prediction:** Use deal attributes to suggest probability score
+- **Task estimation:** Suggest task duration based on title and description (mock)
+- **Risk flag:** Flag tasks at risk of missing deadline (mock)
 
 ## API Endpoints (v1.0)
 
 ```
-GET    /api/v1/customers          → List customers
-POST   /api/v1/customers          → Create customer
-GET    /api/v1/customers/{id}     → Get customer
-PUT    /api/v1/customers/{id}     → Update customer
-DELETE /api/v1/customers/{id}     → Delete customer
-GET    /api/v1/deals              → List deals
-POST   /api/v1/deals              → Create deal
-GET    /api/v1/deals/{id}         → Get deal
-PUT    /api/v1/deals/{id}         → Update deal
-DELETE /api/v1/deals/{id}         → Delete deal
-GET    /api/v1/activities         → List activities
-POST   /api/v1/activities         → Create activity
-GET    /api/v1/activities/{id}    → Get activity
-PUT    /api/v1/activities/{id}    → Update activity
-DELETE /api/v1/activities/{id}    → Delete activity
+GET    /api/v1/projects           → List projects
+POST   /api/v1/projects           → Create project
+GET    /api/v1/projects/{id}      → Get project
+PUT    /api/v1/projects/{id}      → Update project
+DELETE /api/v1/projects/{id}      → Delete project
+GET    /api/v1/tasks              → List tasks
+POST   /api/v1/tasks              → Create task
+GET    /api/v1/tasks/{id}         → Get task
+PUT    /api/v1/tasks/{id}         → Update task
+DELETE /api/v1/tasks/{id}         → Delete task
+GET    /api/v1/milestones         → List milestones
+POST   /api/v1/milestones         → Create milestone
+GET    /api/v1/milestones/{id}    → Get milestone
+PUT    /api/v1/milestones/{id}    → Update milestone
+DELETE /api/v1/milestones/{id}    → Delete milestone
 GET    /api/v1/dashboard          → Dashboard stats
 ```
 
 ## Non-Functional Requirements
 
 - Backend tests: 70%+ coverage
-- Frontend: Responsive, Tailwind + shadcn/ui
+- Frontend: Responsive, Tailwind + pre-built UI components
 - Docker: All services start with `docker compose up -d`
 - No mock data — everything persisted to PostgreSQL
