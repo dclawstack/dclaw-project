@@ -44,4 +44,4 @@ class Task(Base):
         Enum(TaskPriority, name="taskpriority"), nullable=False, default=TaskPriority.medium
     )
 
-    project: Mapped["Project"] = relationship(back_populates="tasks", lazy="selectin", init=False)
+    project: Mapped["Project"] = relationship(back_populates="tasks", lazy="selectin")

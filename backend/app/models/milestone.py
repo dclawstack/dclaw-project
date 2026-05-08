@@ -23,4 +23,4 @@ class Milestone(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default_factory=uuid.uuid4)
     completed: Mapped[bool] = mapped_column(default=False, nullable=False)
 
-    project: Mapped["Project"] = relationship(back_populates="milestones", lazy="selectin", init=False)
+    project: Mapped["Project"] = relationship(back_populates="milestones", lazy="selectin")

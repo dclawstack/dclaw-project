@@ -35,8 +35,8 @@ class Project(Base):
     )
 
     tasks: Mapped[list["Task"]] = relationship(
-        back_populates="project", lazy="selectin", cascade="all, delete-orphan", init=False
+        back_populates="project", lazy="selectin", cascade="all, delete-orphan"
     )
     milestones: Mapped[list["Milestone"]] = relationship(
-        back_populates="project", lazy="selectin", cascade="all, delete-orphan", init=False
+        back_populates="project", lazy="selectin", cascade="all, delete-orphan"
     )
