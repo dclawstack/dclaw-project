@@ -29,7 +29,7 @@ class Project(Base):
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     owner: Mapped[str] = mapped_column(String(255), nullable=False)
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default_factory=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     status: Mapped[ProjectStatus] = mapped_column(
         Enum(ProjectStatus, name="projectstatus"), nullable=False, default=ProjectStatus.planning
     )

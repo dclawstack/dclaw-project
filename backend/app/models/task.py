@@ -36,7 +36,7 @@ class Task(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     assignee: Mapped[str | None] = mapped_column(String(255), nullable=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default_factory=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     status: Mapped[TaskStatus] = mapped_column(
         Enum(TaskStatus, name="taskstatus"), nullable=False, default=TaskStatus.todo
     )
