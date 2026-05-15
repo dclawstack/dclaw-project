@@ -3,8 +3,18 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/workflows/claude*.yml'
+      - 'PATCH-*.md'
+      - 'PATCHES.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/workflows/claude*.yml'
+      - 'PATCH-*.md'
+      - 'PATCHES.md'
 
 jobs:
   backend-tests:
