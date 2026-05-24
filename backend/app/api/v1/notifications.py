@@ -147,8 +147,10 @@ async def mint_stream_token(ctx: AuthContext = Depends(require_workspace)):
 
     Frontend flow: POST here with the long-lived Bearer JWT, get back a
     one-minute stream token, then open `EventSource('/stream?token=…')`
-    with that. The stream token can only be used for /events/stream;
-    other endpoints reject it because it lacks the regular claims.
+    with that. The token MUST carry both `stream: True` and a 60-second
+    `exp` — `require_workspace` rejects any token with the stream claim,
+    so a leaked URL token cannot be replayed against regular API
+    endpoints.
     """
     payload_token = create_access_token(
         subject=str(ctx.user.id),
@@ -156,6 +158,7 @@ async def mint_stream_token(ctx: AuthContext = Depends(require_workspace)):
             "ws": str(ctx.workspace.id),
             STREAM_TOKEN_CLAIM: True,
         },
+        ttl_seconds=STREAM_TOKEN_TTL_SECONDS,
     )
     return StreamTokenResponse(
         token=payload_token, expires_in=STREAM_TOKEN_TTL_SECONDS

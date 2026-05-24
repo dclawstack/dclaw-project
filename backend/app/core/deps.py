@@ -62,6 +62,16 @@ async def require_workspace(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         )
+    # Stream tokens (minted by POST /api/v1/events/token) are designed to
+    # be passed in URLs and SHORT-lived; they must not work as Bearer
+    # credentials on regular API endpoints, otherwise a token leaked to
+    # nginx logs / Referer / browser history could be replayed for full
+    # API access (defeats the SSE-token short-lived design).
+    if payload.get("stream"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Stream tokens cannot be used as API credentials",
+        )
     try:
         user_id = UUID(payload["sub"])
         workspace_id = UUID(payload["ws"])

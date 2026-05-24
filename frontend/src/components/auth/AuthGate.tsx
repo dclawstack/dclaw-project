@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { fetchMe, logout, type AuthUser, type AuthWorkspace } from "@/lib/auth";
@@ -15,6 +15,13 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [checking, setChecking] = useState(true);
 
   const isPublic = pathname ? PUBLIC_PATHS.includes(pathname) : false;
+
+  // Capture router in a ref so the effect doesn't re-run when Next
+  // hands us a fresh router object on rerender (which would otherwise
+  // re-fire fetchMe + replace('/login') on every render — a fetch loop
+  // on token-missing).
+  const routerRef = useRef(router);
+  routerRef.current = router;
 
   useEffect(() => {
     let cancelled = false;
@@ -31,7 +38,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           // refresh, stale router, etc.). The render path below shows
           // a recovery link instead.
           setChecking(false);
-          router.replace("/login");
+          routerRef.current.replace("/login");
         }
         return;
       }
@@ -44,7 +51,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       } catch {
         if (!cancelled) {
           setChecking(false);
-          router.replace("/login");
+          routerRef.current.replace("/login");
         }
       }
     }
@@ -52,7 +59,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [pathname, isPublic, router]);
+  }, [pathname, isPublic]);
 
   if (isPublic) return <>{children}</>;
   if (checking) {

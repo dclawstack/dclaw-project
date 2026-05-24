@@ -65,9 +65,13 @@ async def _persist_and_publish(
         payload=payload,
     )
     try:
+        # Flush MUST happen inside the savepoint — `db.add()` only stages
+        # the object; the actual INSERT is emitted by `flush()`. Without
+        # the flush-inside-savepoint, a failing insert would poison the
+        # outer transaction and the savepoint would be a no-op.
         async with db.begin_nested():
             db.add(notif)
-        await db.flush()
+            await db.flush()
     except Exception as exc:  # noqa: BLE001 — best-effort
         log.warning("notifier.persist_failed", error=str(exc))
         return

@@ -35,12 +35,28 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(subject: str, extra_claims: dict[str, Any] | None = None) -> str:
+def create_access_token(
+    subject: str,
+    extra_claims: dict[str, Any] | None = None,
+    *,
+    ttl_seconds: int | None = None,
+) -> str:
+    """Mint a JWT.
+
+    `ttl_seconds`, when provided, overrides the default
+    `access_token_expire_minutes` window. Used by short-lived flows
+    (SSE stream tokens) where the TTL must be much shorter than the
+    user's session token because the value lands in URLs / logs.
+    """
     now = datetime.now(timezone.utc)
+    if ttl_seconds is not None:
+        delta = timedelta(seconds=ttl_seconds)
+    else:
+        delta = timedelta(minutes=settings.access_token_expire_minutes)
     payload: dict[str, Any] = {
         "sub": subject,
         "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(minutes=settings.access_token_expire_minutes)).timestamp()),
+        "exp": int((now + delta).timestamp()),
     }
     if extra_claims:
         payload.update(extra_claims)

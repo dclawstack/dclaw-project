@@ -59,7 +59,6 @@
     "semantic-search",
     "grounded-qa"
   ],
-  "icon": "/dclaw-icon.svg",
   "homepage": "https://github.com/dclawstack/dclaw-project",
   "license": "Apache-2.0",
   "dpanel": {

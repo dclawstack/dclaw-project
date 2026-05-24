@@ -1,12 +1,16 @@
 """Regression tests for the v1.2.1 code-review findings.
 
 Each test pins a specific bug from the xhigh-effort review so it can't
-silently regress.
+silently regress. Includes the round-2 hardening findings on the
+SSE stream-token mechanism + migration bcrypt seed.
 """
 import io
 import pytest
+import bcrypt
 from datetime import date, timedelta
 from uuid import uuid4
+
+from app.core.security import create_access_token, decode_token
 
 
 # ---- Fix #1: SECRET_KEY production guard ---------------------------------
@@ -408,3 +412,173 @@ def test_cosine_returns_zero_on_dimension_mismatch():
     assert cosine([], [1.0]) == 0.0
     # Same length still computes.
     assert cosine([1.0, 0.0], [1.0, 0.0]) == 1.0
+
+
+# ---- Round 2 / Fix #1: stream token TTL is actually 60s ----------------
+
+
+def test_create_access_token_honours_ttl_seconds_override():
+    """Round-2 finding: stream tokens were minted with the default 60-MINUTE
+    TTL because `create_access_token` had no way to override the window.
+    The new `ttl_seconds` parameter must produce an `exp - iat` close to
+    the requested 60 seconds, not 3600."""
+    token = create_access_token("user-id", ttl_seconds=60)
+    payload = decode_token(token)
+    assert payload is not None
+    # Allow 1s clock-drift slack on either side; should be 60s, never 3600s.
+    delta = payload["exp"] - payload["iat"]
+    assert 59 <= delta <= 61, f"stream token TTL is {delta}s, expected ~60s"
+
+
+@pytest.mark.asyncio
+async def test_stream_token_endpoint_mints_60s_token(client):
+    """The /events/token endpoint must actually mint a 60s token end-to-end,
+    not the default user-session window."""
+    resp = await client.post("/api/v1/events/token")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["expires_in"] == 60
+    payload = decode_token(body["token"])
+    assert payload["stream"] is True
+    delta = payload["exp"] - payload["iat"]
+    assert 59 <= delta <= 61
+
+
+# ---- Round 2 / Fix #2: stream tokens rejected as API Bearer creds -----
+
+
+@pytest.mark.asyncio
+async def test_stream_token_is_not_accepted_as_bearer(client):
+    """Round-2 critical finding: a stream token (designed to land in
+    URLs / logs / Referer headers) MUST NOT be replayable as a Bearer
+    credential against regular API endpoints, otherwise the short-lived
+    SSE-token mechanism provides no actual security benefit."""
+    minted = await client.post("/api/v1/events/token")
+    stream_token = minted.json()["token"]
+
+    # Try to use the stream token as a regular Bearer credential.
+    # Build a fresh client so we don't disturb the fixture's headers.
+    from httpx import AsyncClient, ASGITransport
+    from app.api.main import app
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {stream_token}"},
+    ) as ac:
+        for path in [
+            "/api/v1/projects/",
+            "/api/v1/tasks/",
+            "/api/v1/auth/me",
+            "/api/v1/notifications/",
+            "/api/v1/tags/",
+        ]:
+            resp = await ac.get(path)
+            assert resp.status_code == 401, (
+                f"{path} accepted a stream token as Bearer — that's the "
+                "exact bypass the SSE-token TTL fix is supposed to prevent."
+            )
+
+
+# ---- Round 2 / Fix #3: migration bcrypt hash actually verifies --------
+
+
+def test_migration_legacy_password_hash_is_valid():
+    """The legacy admin seed in 727eec711a17 was using a hardcoded bcrypt
+    hash that didn't actually verify against the documented 'change-me-now'
+    password. The fix computes the hash at runtime via bcrypt.hashpw, so
+    operators can sign in and re-assign legacy projects after the
+    backfill."""
+    # Smoke check: bcrypt actually works with the password the migration uses.
+    h = bcrypt.hashpw(b"change-me-now", bcrypt.gensalt()).decode("ascii")
+    assert bcrypt.checkpw(b"change-me-now", h.encode("ascii"))
+
+    # Read the migration source and ensure the fix is in place: hash is
+    # computed at runtime (bcrypt.hashpw) and the old broken literal
+    # never returns.
+    with open(
+        "/home/user/dclaw-project/backend/alembic/versions/"
+        "727eec711a17_add_users_workspaces_and_project_.py"
+    ) as f:
+        src = f.read()
+    assert "bcrypt.hashpw" in src, (
+        "Migration no longer computes the legacy password hash at "
+        "runtime — operators will lose the documented recovery path."
+    )
+    assert "$2b$12$KIXq3Y8R9F7t5Q1Lq" not in src, (
+        "Hardcoded bcrypt literal reintroduced — the legacy admin "
+        "password won't verify."
+    )
+
+
+# ---- Round 2 / Fix #4: notifier savepoint actually covers the INSERT --
+
+
+@pytest.mark.asyncio
+async def test_notifier_savepoint_isolates_failure_from_outer_txn(client):
+    """If the notification insert fails (e.g. would-be FK violation), the
+    failure must NOT poison the outer transaction. The fix moves
+    `await db.flush()` inside `begin_nested()` so the savepoint catches
+    the insert error instead of letting it surface in the outer commit.
+
+    We exercise this by forcing the notifier to fail and confirming the
+    triggering write still committed."""
+    from app.services import notifier as notifier_module
+
+    # Original _persist_and_publish stays intact; we make _resolve_assignee
+    # return a uuid that doesn't exist so the FK constraint to users.id
+    # fails on insert.
+    async def fake_resolver(*_a, **_k):
+        return uuid4()  # invalid user_id → FK violation on Notification.user_id
+
+    monkey_patches: list = []
+    monkey_patches.append(
+        (notifier_module, "_resolve_assignee", notifier_module._resolve_assignee)
+    )
+    notifier_module._resolve_assignee = fake_resolver
+    try:
+        proj = await client.post("/api/v1/projects/", json={"name": "P", "owner": "u"})
+        # Task create triggers notify_task_assigned. The notifier insert
+        # will fail (invalid user_id FK), but the savepoint contains the
+        # failure, the wrapper swallows it, and the task itself persists.
+        resp = await client.post(
+            "/api/v1/tasks/",
+            json={
+                "project_id": proj.json()["id"],
+                "title": "T",
+                "assignee": "bob@example.com",
+            },
+        )
+        assert resp.status_code == 201, (
+            f"Notifier insert failure poisoned the outer txn: {resp.status_code}"
+        )
+    finally:
+        for mod, attr, original in monkey_patches:
+            setattr(mod, attr, original)
+
+
+# ---- Round 2 / Fix #5: manifest icon reference is removed -----------
+
+
+def test_manifest_does_not_reference_nonexistent_icon():
+    """Round-2 finding: dclaw-manifest.json referenced /dclaw-icon.svg
+    which didn't exist in frontend/public/. Removed the reference so
+    DPanel doesn't 404 when loading the launcher tile."""
+    import json
+    import os
+
+    manifest_path = (
+        "/home/user/dclaw-project/frontend/public/dclaw-manifest.json"
+    )
+    with open(manifest_path) as f:
+        manifest = json.load(f)
+    if "icon" in manifest:
+        # If we DO declare an icon, the asset MUST exist.
+        icon_rel = manifest["icon"].lstrip("/")
+        icon_abs = os.path.join(
+            "/home/user/dclaw-project/frontend/public/", icon_rel
+        )
+        assert os.path.exists(icon_abs), (
+            f"manifest declares icon {manifest['icon']} but no file "
+            f"at {icon_abs}"
+        )

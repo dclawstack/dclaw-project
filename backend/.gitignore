@@ -39,9 +39,9 @@ venv/
 .coverage
 htmlcov/
 
-# Alembic
-alembic/versions/*.py
-!alembic/versions/.gitkeep
+# Alembic — migration *.py files ARE source code and MUST be tracked.
+# Only the local SQLite databases generated when running migrations
+# against the dev URL are ignored (handled in the section below).
 
 # Local SQLite dev / test database
 *.db
