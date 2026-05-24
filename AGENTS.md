@@ -1,4 +1,4 @@
-# DClaw App — Agent Development Guide
+# DClaw Project — Agent Development Guide
 
 > **Read this file first before making any code changes.**
 > This document is the source of truth for architecture, anti-patterns, and development workflow.
@@ -41,7 +41,7 @@ These are non-negotiable. If an agent suggests changing them, reject it.
 ## Directory Structure
 
 ```
-Project/
+dclaw-project/
 ├── backend/
 │   ├── app/
 │   │   ├── api/

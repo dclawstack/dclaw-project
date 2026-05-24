@@ -6,13 +6,13 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: dclaw_crm
+      POSTGRES_DB: dclaw_project
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d dclaw_crm"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d dclaw_project"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,15 +22,15 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/dclaw_crm
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/dclaw_project
       APP_ENV: production
     ports:
-      - "8095:8095"
+      - "8100:8100"
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8095/health/')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/health/')"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -40,15 +40,15 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://localhost:8095
+        NEXT_PUBLIC_API_URL: http://localhost:8100
     environment:
-      PORT: 3006
+      PORT: 3010
     ports:
-      - "3006:3006"
+      - "3010:3010"
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3006/"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3010/"]
       interval: 30s
       timeout: 5s
       retries: 3

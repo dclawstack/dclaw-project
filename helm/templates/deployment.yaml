@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "dclaw-app.fullname" . }}-backend
+  name: {{ include "dclaw-project.fullname" . }}-backend
   labels:
-    app: {{ include "dclaw-app.name" . }}
+    app: {{ include "dclaw-project.name" . }}
     component: backend
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: {{ include "dclaw-app.name" . }}
+      app: {{ include "dclaw-project.name" . }}
       component: backend
   template:
     metadata:
       labels:
-        app: {{ include "dclaw-app.name" . }}
+        app: {{ include "dclaw-project.name" . }}
         component: backend
     spec:
       containers:
@@ -22,20 +22,20 @@ spec:
           image: "{{ .Values.image.backend.repository }}:{{ .Values.image.backend.tag }}"
           imagePullPolicy: {{ .Values.image.backend.pullPolicy }}
           ports:
-            - containerPort: 8000
+            - containerPort: 8100
           envFrom:
             - secretRef:
-                name: {{ include "dclaw-app.fullname" . }}-secrets
+                name: {{ include "dclaw-project.fullname" . }}-secrets
           livenessProbe:
             httpGet:
               path: /health/
-              port: 8000
+              port: 8100
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
             httpGet:
               path: /health/
-              port: 8000
+              port: 8100
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:
@@ -45,20 +45,20 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "dclaw-app.fullname" . }}-frontend
+  name: {{ include "dclaw-project.fullname" . }}-frontend
   labels:
-    app: {{ include "dclaw-app.name" . }}
+    app: {{ include "dclaw-project.name" . }}
     component: frontend
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: {{ include "dclaw-app.name" . }}
+      app: {{ include "dclaw-project.name" . }}
       component: frontend
   template:
     metadata:
       labels:
-        app: {{ include "dclaw-app.name" . }}
+        app: {{ include "dclaw-project.name" . }}
         component: frontend
     spec:
       containers:
@@ -66,6 +66,6 @@ spec:
           image: "{{ .Values.image.frontend.repository }}:{{ .Values.image.frontend.tag }}"
           imagePullPolicy: {{ .Values.image.frontend.pullPolicy }}
           ports:
-            - containerPort: 3000
+            - containerPort: 3010
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

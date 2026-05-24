@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "DClaw Project",
-  description: "DClaw Project Management",
+  description: "DClaw Project — AI-assisted project management",
 };
 
 export default function RootLayout({
