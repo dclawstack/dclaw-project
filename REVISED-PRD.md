@@ -46,7 +46,7 @@ status: Future
 | `docker-compose.yml` | ✅ | with healthchecks + postgres service |
 | `tests/` | ✅ | 69+ pytest cases (v1.2.0); grows per release |
 | `alembic/` | ✅ | 2 revisions through v1.2.0 |
-| `dclaw-manifest.json` | ⏳ | added in v1.2.1 |
+| `dclaw-manifest.json` | ✅ | shipped in v1.2.1 |
 
 ### 2.2 Code Maturity
 | Metric | Value (post v1.2.0) |
@@ -55,7 +55,7 @@ status: Future
 | TypeScript/TSX files (frontend) | ~25 |
 | Tests | ✅ 69 passing |
 | Alembic migrations | ✅ 2 revisions |
-| DPanel manifest | ⏳ v1.2.1 |
+| DPanel manifest | ✅ v1.2.1 |
 
 ### 2.3 Feature Maturity
 - **P0 Foundation:** ✅ shipped (Copilot, planning, task mgmt, resource mgmt scaffolded)
@@ -167,7 +167,7 @@ Before marking this app "shipped", confirm:
 - [ ] `docs/` with getting-started, guides, reference, releases, troubleshooting *(scaffold pending)*
 - [x] `helm/` with Chart.yaml, values.yaml, templates
 - [x] `.github/workflows/` with `ci.yml` + Claude integration
-- [ ] `frontend/public/dclaw-manifest.json` for DPanel registration *(pending — added in v1.2.1)*
+- [x] `frontend/public/dclaw-manifest.json` for DPanel registration
 - [x] `backend/tests/` with pytest + pytest-asyncio (69+ tests)
 - [x] `backend/alembic/` with migrations (2 revisions through v1.2.0)
 - [x] `Dockerfile` + `docker-compose.yml` with correct healthchecks

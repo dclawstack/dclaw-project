@@ -1,0 +1,77 @@
+{
+  "$schema": "https://dclaw.dev/schema/manifest/v1.json",
+  "id": "dclaw-project",
+  "name": "DClaw Project",
+  "version": "1.2.1",
+  "description": "Autonomous AI project manager — plan, track, predict, and run projects with a multi-step agent.",
+  "category": "productivity",
+  "vendor": {
+    "name": "DClaw Stack",
+    "url": "https://dclaw.dev"
+  },
+  "ports": {
+    "frontend": 3010,
+    "backend": 8100
+  },
+  "routes": {
+    "ui": "/",
+    "health": "/health",
+    "ready": "/health/ready",
+    "openapi": "/docs",
+    "api_base": "/api/v1"
+  },
+  "auth": {
+    "type": "jwt",
+    "registration": "/api/v1/auth/register",
+    "login": "/api/v1/auth/login",
+    "me": "/api/v1/auth/me",
+    "logto_compatible": true
+  },
+  "features": {
+    "copilot": true,
+    "rag": true,
+    "agentic_planner": true,
+    "real_time": "sse",
+    "multi_tenant": true,
+    "billing": "stripe-stub",
+    "integrations": ["slack", "github", "logto"]
+  },
+  "capabilities": [
+    "projects",
+    "tasks",
+    "subtasks",
+    "task-dependencies",
+    "milestones",
+    "comments",
+    "tags",
+    "kanban",
+    "burndown",
+    "velocity",
+    "critical-path",
+    "resource-leveling",
+    "risk-forecast",
+    "time-tracking",
+    "notifications",
+    "documents",
+    "sprints",
+    "ai-copilot",
+    "ai-wbs",
+    "semantic-search",
+    "grounded-qa"
+  ],
+  "icon": "/dclaw-icon.svg",
+  "homepage": "https://github.com/dclawstack/dclaw-project",
+  "license": "Apache-2.0",
+  "dpanel": {
+    "registers_as": "app",
+    "requires_secret_key": true,
+    "requires_database_url": true,
+    "optional_env": [
+      "OLLAMA_URL",
+      "OPENROUTER_API_KEY",
+      "CORS_ALLOW_ORIGINS",
+      "DCLAW_DOCS_DIR",
+      "DCLAW_DOC_MAX_BYTES"
+    ]
+  }
+}
