@@ -1,15 +1,15 @@
-# DClaw Assets — Agent Development Guide
+# DClaw Project — Agent Development Guide
 
 > **Read this file first before making any code changes.**
 > This document is the source of truth for architecture, anti-patterns, and development workflow.
 
 ## App Identity
 
-**DClaw Assets** is a vertical SaaS application built on the DClaw Stack.
+**DClaw Project** is a vertical SaaS application built on the DClaw Stack.
 
 - **Backend Port:** `8100` (FastAPI)
 - **Frontend Port:** `3010` (Next.js)
-- **Database:** `dclaw_assets` (PostgreSQL)
+- **Database:** `dclaw_project` (PostgreSQL)
 - **Base API Path:** `/api/v1`
 
 ## Architecture Lock — DO NOT CHANGE
@@ -41,7 +41,7 @@ These are non-negotiable. If an agent suggests changing them, reject it.
 ## Directory Structure
 
 ```
-dclaw-assets/
+dclaw-project/
 ├── backend/
 │   ├── app/
 │   │   ├── api/

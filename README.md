@@ -1,8 +1,8 @@
-# DClaw Assets
+# DClaw Project
 
-> AI-assisted asset management — a DClaw vertical SaaS app.
+> AI-assisted project management — a DClaw vertical SaaS app.
 
-`dclaw-assets` is the asset-tracking app in the DClaw stack. Track assets, owners, lifecycle, and value, with an AI copilot for classification, depreciation forecasting, and renewal/replacement suggestions.
+`dclaw-project` is the project-management app in the DClaw stack: projects, tasks, milestones, time/budget/risk tracking, with an AI copilot for planning, risk prediction, and resource optimization.
 
 ## Stack
 
@@ -25,7 +25,7 @@ Authoritative source: [`AGENTS.md`](./AGENTS.md).
 | Backend (FastAPI) | **8100** | `backend/Dockerfile` (`ENV PORT`, `EXPOSE`, `CMD`), `docker-compose.yml` |
 | Frontend (Next.js) | **3010** | `frontend/Dockerfile` (`ENV PORT`, `EXPOSE`), `docker-compose.yml` |
 | PostgreSQL | **5432** | `docker-compose.yml`, `backend/tests/conftest.py` (CI requirement) |
-| Database name | `dclaw_assets` | `backend/app/core/config.py`, `docker-compose.yml`, `.env.example` |
+| Database name | `dclaw_project` | `backend/app/core/config.py`, `docker-compose.yml`, `.env.example` |
 | Base API path | `/api/v1` | `backend/app/api/main.py` |
 
 ## Local Development
@@ -53,7 +53,7 @@ cd backend
 pytest -v
 ```
 
-CI uses a Postgres service mapped to `localhost:5432` with database `dclaw_assets_test` — do not change that mapping.
+CI uses a Postgres service mapped to `localhost:5432` with database `dclaw_project_test` — do not change that mapping.
 
 ## Project Layout
 
@@ -74,7 +74,7 @@ dclaw-project/
 │       ├── app/              # Pages
 │       ├── components/ui/    # Pre-built UI primitives — do NOT install shadcn CLI
 │       └── lib/              # api.ts client, utils
-├── helm/                     # K8s chart (dclaw-assets)
+├── helm/                     # K8s chart (dclaw-project)
 ├── docker-compose.yml
 ├── .github/workflows/ci.yml
 ├── AGENTS.md                 # Architecture lock — read before changing code
