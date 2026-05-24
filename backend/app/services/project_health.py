@@ -41,7 +41,7 @@ def _ratio(numer: int, denom: int) -> float:
 
 def compute_health(project: Project, today: date | None = None) -> HealthReport:
     today = today or date.today()
-    tasks = [t for t in project.tasks if t.deleted_at is None]
+    tasks = list(project.active_tasks)
     open_tasks = _open_tasks(tasks)
     total_tasks = len(tasks)
 
@@ -60,7 +60,7 @@ def compute_health(project: Project, today: date | None = None) -> HealthReport:
 
     completed_pct = _ratio(total_tasks - len(open_tasks), total_tasks)
 
-    milestones = [m for m in project.milestones if m.deleted_at is None]
+    milestones = list(project.active_milestones)
     slipped_milestones = [
         m for m in milestones if not m.completed and m.target_date < today
     ]

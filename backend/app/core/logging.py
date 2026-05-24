@@ -49,7 +49,22 @@ async def request_id_middleware(
     token = request_id_ctx.set(rid)
     try:
         response = await call_next(request)
+        response.headers["x-request-id"] = rid
+        return response
+    except Exception:
+        # Re-raise so Starlette's exception middleware can build the 500,
+        # but log the request-id first so the failing request is
+        # correlatable. The synthesized error response won't carry the
+        # header (we never own that object), so the log line is the
+        # primary correlation surface.
+        from app.core.logging import get_logger as _get_logger  # avoid cycle
+
+        _get_logger("dclaw.request").error(
+            "request.unhandled_exception",
+            method=request.method,
+            path=request.url.path,
+            request_id=rid,
+        )
+        raise
     finally:
         request_id_ctx.reset(token)
-    response.headers["x-request-id"] = rid
-    return response

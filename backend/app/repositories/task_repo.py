@@ -6,7 +6,7 @@ from sqlalchemy import select, and_, func, or_
 
 from app.models.task import Task, TaskStatus, TaskPriority
 from app.models.tag import Tag
-from app.repositories.base_repo import BaseRepository
+from app.repositories.base_repo import BaseRepository, escape_like, LIKE_ESCAPE
 
 
 class TaskRepository(BaseRepository[Task]):
@@ -26,7 +26,13 @@ class TaskRepository(BaseRepository[Task]):
         offset: int = 0,
     ) -> tuple[list[Task], int]:
         stmt = self._base_query()
-        count_stmt = select(func.count()).select_from(Task).where(Task.deleted_at.is_(None))
+        # DISTINCT count avoids inflated totals when a tag JOIN matches
+        # multiple association rows for the same task.
+        count_stmt = (
+            select(func.count(func.distinct(Task.id)))
+            .select_from(Task)
+            .where(Task.deleted_at.is_(None))
+        )
 
         if project_id is not None:
             stmt = stmt.where(Task.project_id == project_id)
@@ -35,19 +41,13 @@ class TaskRepository(BaseRepository[Task]):
             stmt = stmt.where(Task.parent_task_id == parent_task_id)
             count_stmt = count_stmt.where(Task.parent_task_id == parent_task_id)
         if q:
-            like = f"%{q.lower()}%"
-            stmt = stmt.where(
-                or_(
-                    func.lower(Task.title).like(like),
-                    func.lower(Task.description).like(like),
-                )
+            like = f"%{escape_like(q.lower())}%"
+            text_match = or_(
+                func.lower(Task.title).like(like, escape=LIKE_ESCAPE),
+                func.lower(Task.description).like(like, escape=LIKE_ESCAPE),
             )
-            count_stmt = count_stmt.where(
-                or_(
-                    func.lower(Task.title).like(like),
-                    func.lower(Task.description).like(like),
-                )
-            )
+            stmt = stmt.where(text_match)
+            count_stmt = count_stmt.where(text_match)
         if status is not None:
             stmt = stmt.where(Task.status == status)
             count_stmt = count_stmt.where(Task.status == status)

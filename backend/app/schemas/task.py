@@ -58,7 +58,7 @@ class TaskListResponse(BaseModel):
 class TaskBulkPatch(BaseModel):
     status: TaskStatus | None = None
     priority: TaskPriority | None = None
-    assignee: str | None = None
+    assignee: str | None = Field(default=None, max_length=255)
 
 
 class TaskBulkRequest(BaseModel):

@@ -44,6 +44,9 @@ class ProjectRead(ProjectBase):
 
 
 class ProjectDetailRead(ProjectRead):
+    # Sourced from the soft-delete-filtered `active_tasks`/`active_milestones`
+    # relationships in the endpoint, not from the canonical write-side
+    # collections (which also contain tombstoned rows).
     tasks: List[TaskRead] = []
     milestones: List[MilestoneRead] = []
 

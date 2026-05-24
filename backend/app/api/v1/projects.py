@@ -20,6 +20,7 @@ from app.schemas.project import (
 from app.schemas.task import TaskRead
 from app.schemas.milestone import MilestoneRead
 from app.models.project import Project, ProjectStatus
+from app.models.task import TaskStatus
 
 router = APIRouter()
 
@@ -58,7 +59,14 @@ async def get_project(project_id: UUID, db: AsyncSession = Depends(get_db)):
     project = await repo.get_by_id_with_tasks_and_milestones(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return project
+    # Serialize from the soft-delete-filtered relationships so tombstoned
+    # children don't leak into the public detail payload.
+    payload = ProjectRead.model_validate(project).model_dump()
+    payload["tasks"] = [TaskRead.model_validate(t).model_dump() for t in project.active_tasks]
+    payload["milestones"] = [
+        MilestoneRead.model_validate(m).model_dump() for m in project.active_milestones
+    ]
+    return payload
 
 
 @router.put("/{project_id}", response_model=ProjectRead)
@@ -94,14 +102,14 @@ async def delete_project(project_id: UUID, db: AsyncSession = Depends(get_db)):
 @router.get("/{project_id}/tasks", response_model=List[TaskRead])
 async def list_project_tasks(
     project_id: UUID,
-    status_filter: ProjectStatus | None = Query(default=None, alias="status"),
+    status_filter: TaskStatus | None = Query(default=None, alias="status"),
     limit: int = Query(default=200, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
     repo = TaskRepository(db)
     tasks, _ = await repo.search(
-        project_id=project_id, status=None, limit=limit, offset=offset
+        project_id=project_id, status=status_filter, limit=limit, offset=offset
     )
     return tasks
 

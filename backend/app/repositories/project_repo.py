@@ -5,7 +5,7 @@ from sqlalchemy import select, func, or_
 
 from app.models.project import Project, ProjectStatus
 from app.models.tag import Tag
-from app.repositories.base_repo import BaseRepository
+from app.repositories.base_repo import BaseRepository, escape_like, LIKE_ESCAPE
 
 
 class ProjectRepository(BaseRepository[Project]):
@@ -22,22 +22,22 @@ class ProjectRepository(BaseRepository[Project]):
         offset: int = 0,
     ) -> tuple[list[Project], int]:
         stmt = self._base_query()
-        count_stmt = select(func.count()).select_from(Project).where(Project.deleted_at.is_(None))
+        # DISTINCT count prevents many-to-many JOINs (tag filter) from
+        # inflating `total` past the number of unique projects.
+        count_stmt = (
+            select(func.count(func.distinct(Project.id)))
+            .select_from(Project)
+            .where(Project.deleted_at.is_(None))
+        )
 
         if q:
-            like = f"%{q.lower()}%"
-            stmt = stmt.where(
-                or_(
-                    func.lower(Project.name).like(like),
-                    func.lower(Project.description).like(like),
-                )
+            like = f"%{escape_like(q.lower())}%"
+            text_match = or_(
+                func.lower(Project.name).like(like, escape=LIKE_ESCAPE),
+                func.lower(Project.description).like(like, escape=LIKE_ESCAPE),
             )
-            count_stmt = count_stmt.where(
-                or_(
-                    func.lower(Project.name).like(like),
-                    func.lower(Project.description).like(like),
-                )
-            )
+            stmt = stmt.where(text_match)
+            count_stmt = count_stmt.where(text_match)
         if status is not None:
             stmt = stmt.where(Project.status == status)
             count_stmt = count_stmt.where(Project.status == status)

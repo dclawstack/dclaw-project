@@ -47,11 +47,26 @@ class Project(Base, TimestampMixin, SoftDeleteMixin):
         index=True,
     )
 
+    # Canonical write-side relationships (cascade on hard-delete paths).
     tasks: Mapped[list["Task"]] = relationship(
         back_populates="project", lazy="selectin", cascade="all, delete-orphan"
     )
     milestones: Mapped[list["Milestone"]] = relationship(
         back_populates="project", lazy="selectin", cascade="all, delete-orphan"
+    )
+    # Read-side relationships that respect the soft-delete tombstone.
+    # viewonly=True so they don't participate in cascade or write-back.
+    active_tasks: Mapped[list["Task"]] = relationship(
+        "Task",
+        primaryjoin="and_(Project.id == Task.project_id, Task.deleted_at.is_(None))",
+        viewonly=True,
+        lazy="selectin",
+    )
+    active_milestones: Mapped[list["Milestone"]] = relationship(
+        "Milestone",
+        primaryjoin="and_(Project.id == Milestone.project_id, Milestone.deleted_at.is_(None))",
+        viewonly=True,
+        lazy="selectin",
     )
     tags: Mapped[list["Tag"]] = relationship(
         secondary=project_tags, lazy="selectin", back_populates="projects"

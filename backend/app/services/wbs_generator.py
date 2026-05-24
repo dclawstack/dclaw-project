@@ -138,32 +138,64 @@ class WBSGenerator:
         if not parsed or not _looks_like_wbs(parsed):
             parsed = FALLBACK_WBS
             provider = "fallback-template"
+            model = "fallback-v1"
         else:
             provider = result.provider
+            model = result.model
 
-        tasks = [
-            GeneratedTask(
-                title=str(t.get("title", "")).strip()[:255],
-                description=str(t.get("description", "")).strip(),
-                priority=_clamp_priority(t.get("priority")),
-                estimated_hours=_clamp_int(t.get("estimated_hours"), 1, 1000, default=8),
-                depends_on=[int(d) for d in (t.get("depends_on") or []) if isinstance(d, int)],
+        # Strip whitespace first, then drop anything that became empty so we
+        # don't persist Task(title="") past the Pydantic schema's
+        # min_length=1 contract.
+        raw_tasks = parsed.get("tasks") or []
+        if not isinstance(raw_tasks, list):
+            raw_tasks = []
+        tasks: list[GeneratedTask] = []
+        for t in raw_tasks:
+            if not isinstance(t, dict):
+                continue
+            title = str(t.get("title") or "").strip()[:255]
+            if not title:
+                continue
+            tasks.append(
+                GeneratedTask(
+                    title=title,
+                    description=str(t.get("description") or "").strip(),
+                    priority=_clamp_priority(t.get("priority")),
+                    estimated_hours=_clamp_int(
+                        t.get("estimated_hours"), 1, 1000, default=8
+                    ),
+                    depends_on=_coerce_int_list(t.get("depends_on")),
+                )
             )
-            for t in parsed.get("tasks", [])
-            if t.get("title")
-        ]
-        milestones = [
-            GeneratedMilestone(
-                name=str(m.get("name", "")).strip()[:255],
-                target_offset_days=_clamp_int(
-                    m.get("target_offset_days"), 1, 365, default=request.deadline_days
-                ),
+
+        # Clamp every depends_on index into [0, len(tasks)) and drop self-refs
+        # so the persistence layer can't introduce a bad FK.
+        for idx, gt in enumerate(tasks):
+            gt.depends_on = [d for d in gt.depends_on if 0 <= d < len(tasks) and d != idx]
+
+        raw_milestones = parsed.get("milestones") or []
+        if not isinstance(raw_milestones, list):
+            raw_milestones = []
+        milestones: list[GeneratedMilestone] = []
+        for m in raw_milestones:
+            if not isinstance(m, dict):
+                continue
+            name = str(m.get("name") or "").strip()[:255]
+            if not name:
+                continue
+            milestones.append(
+                GeneratedMilestone(
+                    name=name,
+                    target_offset_days=_clamp_int(
+                        m.get("target_offset_days"),
+                        1,
+                        max(1, request.deadline_days),
+                        default=request.deadline_days,
+                    ),
+                )
             )
-            for m in parsed.get("milestones", [])
-            if m.get("name")
-        ]
         return WBSResult(
-            tasks=tasks, milestones=milestones, provider=provider, model=result.model
+            tasks=tasks, milestones=milestones, provider=provider, model=model
         )
 
 
@@ -204,6 +236,25 @@ def _clamp_int(value: Any, lo: int, hi: int, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return max(lo, min(hi, n))
+
+
+def _coerce_int_list(value: Any) -> list[int]:
+    """Best-effort coercion of an LLM-emitted index list.
+
+    Smaller models routinely stringify integers in JSON ("0", "1") or wrap
+    them in floats (1.0). The previous implementation gated on
+    `isinstance(d, int)` before calling `int(d)`, which silently dropped
+    every stringified index and produced an empty dependency graph.
+    """
+    if not isinstance(value, list):
+        return []
+    out: list[int] = []
+    for d in value:
+        try:
+            out.append(int(d))
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def milestone_target_date(offset_days: int, today: date | None = None) -> date:

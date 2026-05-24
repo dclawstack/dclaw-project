@@ -54,6 +54,18 @@ class AICopilotService:
         self.ollama_url = settings.ollama_url.rstrip("/")
         self.ollama_model = settings.ollama_model
 
+    # Errors that mean "this provider is unreachable / unauthorized / drunk"
+    # — safe to swallow and fall through. Programmer errors (KeyError on a
+    # schema-drifted response, AttributeError on bad code) must NOT be
+    # swallowed here: they'd silently degrade real outages to "heuristic ok"
+    # and hide bugs in monitoring. Re-read settings on each call so env
+    # changes (tests, hot reload) take effect without a process restart.
+    _PROVIDER_FAIL = (
+        httpx.HTTPError,
+        httpx.TimeoutException,
+        httpx.HTTPStatusError,
+    )
+
     async def chat(
         self,
         messages: list[ChatMessage],
@@ -63,20 +75,30 @@ class AICopilotService:
         json_mode: bool = False,
     ) -> ChatResult:
         """Try OpenRouter → Ollama → heuristic fallback. Never raises."""
+        # Re-read on every call so a key set after the first request is
+        # honored (avoids the singleton-snapshot footgun).
+        self.openrouter_key = settings.openrouter_api_key
         if self.openrouter_key:
             try:
                 return await self._call_openrouter(
                     messages, max_tokens=max_tokens, temperature=temperature, json_mode=json_mode
                 )
-            except Exception as exc:  # pragma: no cover - network-dependent
+            except self._PROVIDER_FAIL as exc:  # pragma: no cover - network
                 log.warning("ai.openrouter.error", error=str(exc))
+            except (KeyError, IndexError, TypeError, ValueError) as exc:
+                # Response shape drift: log loudly but still fall through so
+                # the user gets *something* — they shouldn't see a 500 for
+                # an upstream that returned 200.
+                log.error("ai.openrouter.bad_response", error=str(exc))
 
         try:
             return await self._call_ollama(
                 messages, max_tokens=max_tokens, temperature=temperature, json_mode=json_mode
             )
-        except Exception as exc:
+        except self._PROVIDER_FAIL as exc:
             log.warning("ai.ollama.error", error=str(exc))
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            log.error("ai.ollama.bad_response", error=str(exc))
 
         return self._heuristic_reply(messages)
 
@@ -237,3 +259,9 @@ def get_copilot() -> AICopilotService:
     if _singleton is None:
         _singleton = AICopilotService()
     return _singleton
+
+
+def reset_copilot() -> None:
+    """Drop the cached singleton — for tests that mutate env vars at runtime."""
+    global _singleton
+    _singleton = None

@@ -3,12 +3,44 @@ from datetime import datetime, timezone
 from typing import TypeVar, Generic
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 
 from app.models.base import Base
 from app.models.mixins import SoftDeleteMixin
 
 T = TypeVar("T", bound=Base)
+
+
+# Per-parent-model soft-delete cascade map. Each entry says "when row R of
+# model M is tombstoned, also tombstone every live child whose FK column
+# equals R.id, in each of these child tables." We use bulk UPDATE rather
+# than walking the ORM relationship so we don't have to load the children
+# into the session (which has surprising interactions with the
+# self-referential `cascade="all, delete-orphan"` on Task.subtasks).
+_SOFT_DELETE_CASCADE: dict[type, list[tuple[type, str]]] = {}
+
+
+def register_soft_delete_cascade(
+    parent_model: type, *child_specs: tuple[type, str]
+) -> None:
+    """Register `(ChildModel, fk_column_name)` pairs to cascade-soft-delete
+    when a parent of `parent_model` is tombstoned."""
+    _SOFT_DELETE_CASCADE[parent_model] = list(child_specs)
+
+
+def escape_like(term: str) -> str:
+    """Escape SQL LIKE metacharacters in user input.
+
+    Without this, a user's `%` or `_` in a search query becomes a wildcard:
+    `q=%` would match every row, and `q=a_b` would match `axb`. Returns a
+    string suitable for embedding inside an outer `%...%` pattern; the
+    caller must also pass `escape="\\"` to the LIKE clause so the DB
+    interprets backslashes consistently across SQLite and Postgres.
+    """
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+LIKE_ESCAPE = "\\"
 
 
 class BaseRepository(Generic[T]):
@@ -55,9 +87,22 @@ class BaseRepository(Generic[T]):
         return obj
 
     async def delete(self, obj: T) -> None:
-        """Soft-delete when supported, hard-delete otherwise."""
+        """Soft-delete when supported, hard-delete otherwise.
+
+        For soft-delete we also fire a bulk-UPDATE per registered child
+        relationship so deleted parents don't leave orphans visible
+        through global list queries.
+        """
         if self._is_soft_delete:
-            obj.deleted_at = datetime.now(timezone.utc)
+            now = datetime.now(timezone.utc)
+            for child_model, fk_attr in _SOFT_DELETE_CASCADE.get(type(obj), []):
+                fk_col = getattr(child_model, fk_attr)
+                await self.db.execute(
+                    update(child_model)
+                    .where(fk_col == obj.id, child_model.deleted_at.is_(None))
+                    .values(deleted_at=now)
+                )
+            obj.deleted_at = now
             await self.db.commit()
         else:
             await self.db.delete(obj)

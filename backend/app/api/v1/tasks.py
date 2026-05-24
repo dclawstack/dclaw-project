@@ -25,10 +25,15 @@ router = APIRouter()
 
 
 def _set_completed_at(task: Task) -> None:
+    """Stamp completion date when a task first reaches done.
+
+    Caller must only invoke this when `status` actually changed (so we don't
+    wipe history on unrelated edits). When status moves OFF done we leave
+    completed_at intact — it records when the work was finished, even if the
+    task is later reopened. The next done-transition will re-stamp it.
+    """
     if task.status == TaskStatus.done and task.completed_at is None:
         task.completed_at = date.today()
-    elif task.status != TaskStatus.done:
-        task.completed_at = None
 
 
 @router.get("/", response_model=TaskListResponse, summary="List tasks with search/filter/pagination")
@@ -114,11 +119,20 @@ async def bulk_update_tasks(data: TaskBulkRequest, db: AsyncSession = Depends(ge
             status_code=404, detail=f"Tasks not found: {[str(m) for m in missing]}"
         )
     patch = data.patch.model_dump(exclude_unset=True)
+    status_in_patch = "status" in patch
     for t in tasks:
         for field, value in patch.items():
             setattr(t, field, value)
-        _set_completed_at(t)
-    await db.commit()
+        if status_in_patch:
+            _set_completed_at(t)
+    try:
+        await db.commit()
+    except Exception:
+        # Without rollback the session is left in PendingRollbackError state
+        # and subsequent operations on it (including the refresh loop below
+        # or any later request reusing this session) blow up cryptically.
+        await db.rollback()
+        raise
     for t in tasks:
         await db.refresh(t)
     return tasks
@@ -150,14 +164,26 @@ async def update_task(task_id: UUID, data: TaskUpdate, db: AsyncSession = Depend
         parent = await repo.get_by_id(data.parent_task_id)
         if not parent:
             raise HTTPException(status_code=404, detail="Parent task not found")
+        # The parent must live in the same project as this task (after any
+        # project_id change in this same patch). create_task enforces this
+        # symmetry — keep update_task in lockstep so the tree never bridges
+        # projects.
+        effective_project_id = data.project_id if data.project_id is not None else task.project_id
+        if parent.project_id != effective_project_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Parent task must belong to the same project",
+            )
 
     payload = data.model_dump(exclude_unset=True)
     tag_ids = payload.pop("tag_ids", None)
+    status_changed = "status" in payload
     for field, value in payload.items():
         setattr(task, field, value)
     if tag_ids is not None:
         task.tags = await tag_repo.get_many(tag_ids)
-    _set_completed_at(task)
+    if status_changed:
+        _set_completed_at(task)
     await db.commit()
     await db.refresh(task)
     return task

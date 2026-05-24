@@ -67,8 +67,7 @@ async def _project_context(db: AsyncSession, project_id: UUID) -> str:
                 "due_date": t.due_date.isoformat() if t.due_date else None,
                 "assignee": t.assignee,
             }
-            for t in project.tasks
-            if t.deleted_at is None
+            for t in project.active_tasks
         ],
         "milestones": [
             {
@@ -76,8 +75,7 @@ async def _project_context(db: AsyncSession, project_id: UUID) -> str:
                 "target_date": m.target_date.isoformat(),
                 "completed": m.completed,
             }
-            for m in project.milestones
-            if m.deleted_at is None
+            for m in project.active_milestones
         ],
     }
     return project_context_block(data)
@@ -182,9 +180,12 @@ class GenerateWBSResponse(BaseModel):
 
 @router.post("/generate-wbs", response_model=GenerateWBSResponse)
 async def generate_wbs(body: GenerateWBSRequest, db: AsyncSession = Depends(get_db)):
+    from app.models.project import Project
+
     project_repo = ProjectRepository(db)
-    if body.project_id:
-        project = await project_repo.get_by_id(body.project_id)
+    existing_project_id = body.project_id
+    if existing_project_id:
+        project = await project_repo.get_by_id(existing_project_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
     else:
@@ -193,10 +194,7 @@ async def generate_wbs(body: GenerateWBSRequest, db: AsyncSession = Depends(get_
                 status_code=400,
                 detail="When project_id is not provided, project_name and owner are required.",
             )
-        from app.models.project import Project
-
-        project = Project(name=body.project_name, owner=body.owner)
-        project = await project_repo.create(project)
+        project = None  # created inside the transaction below
 
     generator = WBSGenerator()
     result = await generator.generate(
@@ -207,31 +205,60 @@ async def generate_wbs(body: GenerateWBSRequest, db: AsyncSession = Depends(get_
         )
     )
 
-    task_repo = TaskRepository(db)
-    milestone_repo = MilestoneRepository(db)
-
+    # Single atomic write: project (if new) + tasks (with parent FKs from
+    # depends_on[0]) + milestones, one commit. On any failure the new
+    # project does not survive.
     created_tasks: list[Task] = []
-    for gt in result.tasks:
-        task = Task(
-            project_id=project.id,
-            title=gt.title,
-            description=gt.description,
-            priority=TaskPriority(gt.priority),
-            estimated_hours=gt.estimated_hours,
-        )
-        await task_repo.create(task)
-        created_tasks.append(task)
-
     created_milestones: list[Milestone] = []
-    for gm in result.milestones:
-        target = milestone_target_date(gm.target_offset_days)
-        m = Milestone(
-            project_id=project.id,
-            name=gm.name,
-            target_date=target,
-        )
-        await milestone_repo.create(m)
-        created_milestones.append(m)
+    try:
+        if project is None:
+            project = Project(name=body.project_name, owner=body.owner)
+            db.add(project)
+            await db.flush()  # populate project.id without committing
+
+        # First pass: stage tasks without parent FKs so we get IDs.
+        for gt in result.tasks:
+            task = Task(
+                project_id=project.id,
+                title=gt.title,
+                description=gt.description,
+                priority=TaskPriority(gt.priority),
+                estimated_hours=gt.estimated_hours,
+            )
+            db.add(task)
+            created_tasks.append(task)
+        await db.flush()  # populate task IDs
+
+        # Second pass: wire depends_on[0] (the primary prerequisite) into
+        # parent_task_id. We only consume the first dep because the schema
+        # only models one parent edge; the rest are returned in the response
+        # for the UI to render but are not persisted as FKs.
+        for gt, task in zip(result.tasks, created_tasks):
+            if not gt.depends_on:
+                continue
+            for idx in gt.depends_on:
+                if 0 <= idx < len(created_tasks) and created_tasks[idx].id != task.id:
+                    task.parent_task_id = created_tasks[idx].id
+                    break
+
+        for gm in result.milestones:
+            m = Milestone(
+                project_id=project.id,
+                name=gm.name,
+                target_date=milestone_target_date(gm.target_offset_days),
+            )
+            db.add(m)
+            created_milestones.append(m)
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    for t in created_tasks:
+        await db.refresh(t)
+    for m in created_milestones:
+        await db.refresh(m)
 
     return GenerateWBSResponse(
         project_id=project.id,
