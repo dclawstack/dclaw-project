@@ -1,95 +1,100 @@
-# DClaw Scaffold
+# DClaw Assets
 
-> **The single source of truth for new DClaw app development.**
-> Clone this repo, rename it, fill in your `PRODUCT-SPEC.md`, and hand it to your coding agents.
+> AI-assisted asset management — a DClaw vertical SaaS app.
 
-## What This Is
+`dclaw-assets` is the asset-tracking app in the DClaw stack. Track assets, owners, lifecycle, and value, with an AI copilot for classification, depreciation forecasting, and renewal/replacement suggestions.
 
-This scaffold contains the **complete boilerplate** for any DClaw vertical SaaS app:
-- ✅ FastAPI backend with correct SQLAlchemy 2.0 setup
-- ✅ Next.js 14 frontend with Tailwind + pre-built UI components
-- ✅ Docker + docker-compose with working healthchecks
-- ✅ Helm chart for Kubernetes deployment
-- ✅ Alembic migrations setup
-- ✅ pytest test harness with pinned pytest-asyncio==0.24.0
-- ✅ GitHub Actions CI
-- ✅ `AGENTS.md` + `PLAN-v1.2.md` templates
-- ✅ Pre-built UI components (no shadcn CLI needed)
+## Stack
 
-## How to Use
+| Layer | Technology |
+|-------|------------|
+| Frontend | Next.js 14 (App Router), Tailwind CSS, pre-built UI components |
+| Backend | FastAPI, Pydantic v2, SQLAlchemy 2.0 (async), asyncpg |
+| Database | PostgreSQL 16 |
+| Migrations | Alembic |
+| Tests | pytest + `pytest-asyncio==0.24.0` |
+| Container | Docker + docker-compose; Helm chart for K8s |
+| CI | GitHub Actions (`.github/workflows/ci.yml`) |
+
+## Ports & Database
+
+Authoritative source: [`AGENTS.md`](./AGENTS.md).
+
+| Service | Port | Where it's defined |
+|---------|------|--------------------|
+| Backend (FastAPI) | **8100** | `backend/Dockerfile` (`ENV PORT`, `EXPOSE`, `CMD`), `docker-compose.yml` |
+| Frontend (Next.js) | **3010** | `frontend/Dockerfile` (`ENV PORT`, `EXPOSE`), `docker-compose.yml` |
+| PostgreSQL | **5432** | `docker-compose.yml`, `backend/tests/conftest.py` (CI requirement) |
+| Database name | `dclaw_assets` | `backend/app/core/config.py`, `docker-compose.yml`, `.env.example` |
+| Base API path | `/api/v1` | `backend/app/api/main.py` |
+
+## Local Development
 
 ```bash
-# 1. Clone the scaffold
-git clone https://github.com/dclawstack/dclaw-scaffold.git dclaw-YOURAPP
-cd dclaw-YOURAPP
+# 1. Copy env and edit if needed
+cp .env.example .env
 
-# 2. Find/replace placeholders
-# Project    -> Your app name (e.g., CRM)
-# {BACKEND_PORT}-> Next free port (see port registry below)
-# {FRONTEND_PORT}-> Next free port
-# {DB_NAME}     -> dclaw_yourapp
+# 2. Bring up the stack
+docker compose up -d --build
 
-# 3. Write your PRODUCT-SPEC.md
-# See PRODUCT-SPEC.md.template for the format
+# 3. Apply migrations
+docker compose exec backend alembic upgrade head
 
-# 4. Hand to your coding agents
-# See SCALING-PLAYBOOK.md for the parallel agent workflow
+# 4. Open the app
+# Frontend: http://localhost:3010
+# Backend:  http://localhost:8100/health/
+# API docs: http://localhost:8100/docs
 ```
 
-## Critical Rules for Agents
+### Running tests
 
-### DO NOT install shadcn CLI
-The scaffold includes pre-built UI components in `frontend/src/components/ui/`. Installing `shadcn` v4 or `@base-ui/react` will break the Tailwind v3 build.
+```bash
+cd backend
+pytest -v
+```
 
-### DO NOT change the Postgres test port
-`backend/tests/conftest.py` uses `localhost:5432`. GitHub Actions CI maps the Postgres service to port 5432. Changing this breaks CI.
+CI uses a Postgres service mapped to `localhost:5432` with database `dclaw_assets_test` — do not change that mapping.
 
-### DO NOT delete `.github/workflows/ci.yml`
-This file is required for GitHub Actions to run tests on every push.
+## Project Layout
 
-### DO NOT upgrade pytest-asyncio
-Keep `pytest-asyncio==0.24.0` pinned in `requirements.txt`. v1.3.0 breaks fixture scoping.
+```
+dclaw-project/
+├── backend/                  # FastAPI app
+│   ├── app/
+│   │   ├── api/              # Routes (health, v1: projects, tasks, milestones)
+│   │   ├── core/             # config, database
+│   │   ├── models/           # SQLAlchemy 2.0 models
+│   │   ├── repositories/     # CRUD layer
+│   │   ├── schemas/          # Pydantic v2
+│   │   └── services/         # Business logic / AI
+│   ├── alembic/              # Migrations
+│   └── tests/
+├── frontend/                 # Next.js 14 (App Router)
+│   └── src/
+│       ├── app/              # Pages
+│       ├── components/ui/    # Pre-built UI primitives — do NOT install shadcn CLI
+│       └── lib/              # api.ts client, utils
+├── helm/                     # K8s chart (dclaw-assets)
+├── docker-compose.yml
+├── .github/workflows/ci.yml
+├── AGENTS.md                 # Architecture lock — read before changing code
+├── REVISED-PRD.md            # Product requirements
+└── PLAN-v1.2.md              # Feature backlog
+```
 
-## Port Registry
+## Critical Rules
 
-| App | Backend Port | Frontend Port | Database |
-|-----|-------------|---------------|----------|
-| dclaw-chat | 8090 | 3000 | dclaw_chat |
-| dclaw-med | 8092 | 3004 | dclaw_med |
-| dclaw-learn | 8093 | 3003 | dclaw_learn |
-| dclaw-code | 8094 | 3005 | dclaw_code |
-| dclaw-legal | 8099 | 3013 | dclaw_legal |
-| dclaw-crm | 8095 | 3006 | dclaw_crm |
-| dclaw-finance | 8096 | 3007 | dclaw_finance |
-| dclaw-hr | 8097 | 3008 | dclaw_hr |
-| **TBD #9** | **8098** | **3009** | **dclaw_xxx** |
-| **TBD #10** | **8100** | **3010** | **dclaw_xxx** |
+These come straight from `AGENTS.md`. Read that file before touching code.
 
-> **Rule:** New apps take the next available port. Update this table when assigning.
+- **Do NOT install the shadcn CLI** — use the pre-built components in `frontend/src/components/ui/`.
+- **Do NOT change the Postgres test port** — `backend/tests/conftest.py` must use `localhost:5432`; CI maps it there.
+- **Do NOT delete `.github/workflows/ci.yml`**.
+- **Do NOT upgrade `pytest-asyncio`** beyond `0.24.0` — v1.x breaks fixture scoping.
+- **All DB access** goes through `app/repositories/`; no in-memory mocks.
+- **New models** require an Alembic migration.
 
-## Files You Must Customize
+## Contributors
 
-| File | What to Change |
-|------|---------------|
-| `backend/app/core/config.py` | `app_name`, default database name |
-| `backend/app/api/main.py` | Wire v1 routers |
-| `frontend/package.json` | Package name |
-| `frontend/src/app/layout.tsx` | Title, description |
-| `frontend/src/app/page.tsx` | Dashboard content |
-| `docker-compose.yml` | Port mappings |
-| `helm/Chart.yaml` | Chart name |
-| `helm/values.yaml` | Image repository names |
-| `AGENTS.md` | App identity, port numbers |
-| `PLAN-v1.2.md` | Feature backlog |
-| `PRODUCT-SPEC.md` | (Create this) Domain models, business logic |
-
-## What You Should NOT Change
-
-- `app/models/base.py` — `DeclarativeBase` pattern
-- `app/core/database.py` — Engine/session factory
-- `docker-compose.yml` healthcheck commands
-- `frontend/Dockerfile` `ARG NEXT_PUBLIC_API_URL` pattern
-- `tests/conftest.py` — Test DB override pattern (keep `localhost:5432`)
-- `frontend/src/components/ui/*.tsx` — Pre-built components (use as-is)
-- `requirements.txt` — Keep `pytest-asyncio==0.24.0` pinned
-- `.github/workflows/ci.yml` — Do not delete
+| Name | Email |
+|------|-------|
+| Rajendra Machani | 01.r.machani@gmail.com |

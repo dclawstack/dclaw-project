@@ -1,4 +1,4 @@
-DClaw App deployed!
+DClaw Assets deployed!
 
-Backend: {{ include "dclaw-app.fullname" . }}-backend
-Frontend: {{ include "dclaw-app.fullname" . }}-frontend
+Backend: {{ include "dclaw-assets.fullname" . }}-backend
+Frontend: {{ include "dclaw-assets.fullname" . }}-frontend

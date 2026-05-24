@@ -3,8 +3,8 @@ import Link from "next/link";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "DClaw Project",
-  description: "DClaw Project Management",
+  title: "DClaw Assets",
+  description: "DClaw Assets — AI-assisted asset management",
 };
 
 export default function RootLayout({
@@ -18,7 +18,7 @@ export default function RootLayout({
         <nav className="border-b border-slate-200 bg-white">
           <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
             <Link href="/" className="text-xl font-bold text-slate-900">
-              DClaw Project
+              DClaw Assets
             </Link>
             <div className="flex gap-6">
               <Link href="/" className="text-sm font-medium text-slate-600 hover:text-slate-900">

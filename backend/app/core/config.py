@@ -3,11 +3,11 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    app_name: str = "DClaw CRM"
+    app_name: str = "DClaw Assets"
     app_env: str = "dev"
     debug: bool = True
 
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/dclaw_crm"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/dclaw_assets"
     
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1"
