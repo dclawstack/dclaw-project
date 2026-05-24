@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.deps import AuthContext, require_workspace
 from app.repositories.tag_repo import TagRepository
 from app.schemas.tag import TagCreate, TagRead, TagUpdate
 from app.models.tag import Tag
@@ -13,14 +14,21 @@ router = APIRouter()
 
 
 @router.get("/", response_model=List[TagRead])
-async def list_tags(db: AsyncSession = Depends(get_db)):
+async def list_tags(
+    db: AsyncSession = Depends(get_db),
+    _: AuthContext = Depends(require_workspace),
+):
     repo = TagRepository(db)
-    items, _ = await repo.list_all(limit=500, offset=0)
+    items, _total = await repo.list_all(limit=500, offset=0)
     return items
 
 
 @router.post("/", response_model=TagRead, status_code=status.HTTP_201_CREATED)
-async def create_tag(data: TagCreate, db: AsyncSession = Depends(get_db)):
+async def create_tag(
+    data: TagCreate,
+    db: AsyncSession = Depends(get_db),
+    _: AuthContext = Depends(require_workspace),
+):
     repo = TagRepository(db)
     existing = await repo.get_by_name(data.name)
     if existing:
@@ -30,7 +38,11 @@ async def create_tag(data: TagCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{tag_id}", response_model=TagRead)
-async def get_tag(tag_id: UUID, db: AsyncSession = Depends(get_db)):
+async def get_tag(
+    tag_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: AuthContext = Depends(require_workspace),
+):
     repo = TagRepository(db)
     tag = await repo.get_by_id(tag_id)
     if not tag:
@@ -39,7 +51,12 @@ async def get_tag(tag_id: UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{tag_id}", response_model=TagRead)
-async def update_tag(tag_id: UUID, data: TagUpdate, db: AsyncSession = Depends(get_db)):
+async def update_tag(
+    tag_id: UUID,
+    data: TagUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: AuthContext = Depends(require_workspace),
+):
     repo = TagRepository(db)
     tag = await repo.get_by_id(tag_id)
     if not tag:
@@ -52,7 +69,11 @@ async def update_tag(tag_id: UUID, data: TagUpdate, db: AsyncSession = Depends(g
 
 
 @router.delete("/{tag_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_tag(tag_id: UUID, db: AsyncSession = Depends(get_db)):
+async def delete_tag(
+    tag_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: AuthContext = Depends(require_workspace),
+):
     repo = TagRepository(db)
     tag = await repo.get_by_id(tag_id)
     if not tag:

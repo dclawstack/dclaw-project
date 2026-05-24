@@ -10,7 +10,7 @@ from alembic import context
 from app.core.config import settings
 from app.models.base import Base
 # Import all models so they register on Base.metadata for autogenerate.
-from app.models import project, task, milestone, tag, comment  # noqa: F401
+from app.models import user, workspace, project, task, milestone, tag, comment  # noqa: F401
 
 # this is the Alembic Config object
 config = context.config

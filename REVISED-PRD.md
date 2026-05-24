@@ -36,32 +36,31 @@ status: Future
 ### 2.1 Scaffold Status
 | Component | Status | Notes |
 |-----------|--------|-------|
-| `frontend/` | ❌ | Next.js 14+ app |
-| `backend/` | ❌ | FastAPI + SQLAlchemy 2.0 |
-| `docs/` | ❌ | getting-started, guides, reference, releases |
-| `helm/` | ❌ | K8s deployment manifests |
-| `.github/workflows/` | ❌ | CI/CD + Claude integration |
-| `AGENTS.md` | ❌ | Per-repo agent instructions |
-| `PLAN-v1.2.md` | ❌ | Feature roadmap |
-| `docker-compose.yml` | ❌ | Local dev stack |
-| `tests/` | ❌ | pytest + pytest-asyncio |
-| `alembic/` | ❌ | Database migrations |
-| `dclaw-manifest.json` | ❌ | DPanel registration |
+| `frontend/` | ✅ | Next.js 14+ App Router, Tailwind, custom UI |
+| `backend/` | ✅ | FastAPI + SQLAlchemy 2.0 (async) |
+| `docs/` | ❌ | scaffold pending (v1.3) |
+| `helm/` | ✅ | Chart + deployment / service / secret templates |
+| `.github/workflows/` | ✅ | CI + Claude review |
+| `AGENTS.md` | ✅ | per-repo guide |
+| `PLAN-v1.2.md` | ✅ | YC-grade roadmap with complexity tiers |
+| `docker-compose.yml` | ✅ | with healthchecks + postgres service |
+| `tests/` | ✅ | 69+ pytest cases (v1.2.0); grows per release |
+| `alembic/` | ✅ | 2 revisions through v1.2.0 |
+| `dclaw-manifest.json` | ⏳ | added in v1.2.1 |
 
 ### 2.2 Code Maturity
-| Metric | Value |
+| Metric | Value (post v1.2.0) |
 |--------|-------|
-| Python source files (backend) | ~0 |
-| TypeScript/TSX files (frontend) | ~0 |
-| Total source files | ~0 |
-| Tests | ❌ Missing |
-| Alembic migrations | ❌ Missing |
-| DPanel manifest | ❌ Missing |
+| Python source files (backend) | ~40 |
+| TypeScript/TSX files (frontend) | ~25 |
+| Tests | ✅ 69 passing |
+| Alembic migrations | ✅ 2 revisions |
+| DPanel manifest | ⏳ v1.2.1 |
 
 ### 2.3 Feature Maturity
-- **P0 Foundation:** Not yet implemented
-- **P1 Platform:** Not yet started
-- **P2 Vertical:** Not yet started
+- **P0 Foundation:** ✅ shipped (Copilot, planning, task mgmt, resource mgmt scaffolded)
+- **P1 Platform:** 🟡 in progress (time/budget/risk/integration this branch)
+- **P2 Vertical / Scale:** 🟡 in progress (portfolio, agile, client portal, forecasting this branch)
 
 ---
 
@@ -163,21 +162,21 @@ status: Future
 
 Before marking this app "shipped", confirm:
 
-- [ ] `frontend/` with Next.js 14+, Tailwind, shadcn/ui
-- [ ] `backend/` with FastAPI, Pydantic v2, SQLAlchemy 2.0, asyncpg
-- [ ] `docs/` with getting-started, guides, reference, releases, troubleshooting
-- [ ] `helm/` with Chart.yaml, values.yaml, templates (deployment, service, ingress, cloudnativepg)
-- [ ] `.github/workflows/` with build-backend.yml, build-frontend.yml, deploy.yml, claude.yml
-- [ ] `frontend/public/dclaw-manifest.json` for DPanel registration
-- [ ] `backend/tests/` with pytest + pytest-asyncio
-- [ ] `backend/alembic/` with initial migration
-- [ ] `Dockerfile` + `docker-compose.yml` with correct healthchecks
-- [ ] Health endpoint at `/health` returning `{"status":"ok"}`
-- [ ] `AGENTS.md` with per-repo instructions
-- [ ] `PLAN-v1.2.md` with feature roadmap
-- [ ] Port assigned from registry and documented
-- [ ] No hardcoded secrets — use `.env.example` + K8s Secrets
-- [ ] Non-root containers in Dockerfile
+- [x] `frontend/` with Next.js 14+, Tailwind, custom UI library (see AGENTS.md — shadcn CLI is disallowed)
+- [x] `backend/` with FastAPI, Pydantic v2, SQLAlchemy 2.0, asyncpg
+- [ ] `docs/` with getting-started, guides, reference, releases, troubleshooting *(scaffold pending)*
+- [x] `helm/` with Chart.yaml, values.yaml, templates
+- [x] `.github/workflows/` with `ci.yml` + Claude integration
+- [ ] `frontend/public/dclaw-manifest.json` for DPanel registration *(pending — added in v1.2.1)*
+- [x] `backend/tests/` with pytest + pytest-asyncio (69+ tests)
+- [x] `backend/alembic/` with migrations (2 revisions through v1.2.0)
+- [x] `Dockerfile` + `docker-compose.yml` with correct healthchecks
+- [x] Health endpoint at `/health` returning `{"status":"ok"}` + `/health/ready` DB probe
+- [x] `AGENTS.md` with per-repo instructions
+- [x] `PLAN-v1.2.md` with feature roadmap
+- [x] Port assigned from registry: backend `8100`, frontend `3010`
+- [x] No hardcoded secrets — `.env.example` + Helm Secret template
+- [x] Non-root containers in Dockerfile (`appuser` in backend)
 
 ---
 

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.task import Task
     from app.models.milestone import Milestone
     from app.models.tag import Tag
+    from app.models.workspace import Workspace
 
 
 class ProjectStatus(str, PyEnum):
@@ -35,6 +36,9 @@ class Project(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "projects"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -45,6 +49,10 @@ class Project(Base, TimestampMixin, SoftDeleteMixin):
         nullable=False,
         default=ProjectStatus.planning,
         index=True,
+    )
+
+    workspace: Mapped["Workspace"] = relationship(
+        back_populates="projects", lazy="selectin"
     )
 
     # Canonical write-side relationships (cascade on hard-delete paths).
