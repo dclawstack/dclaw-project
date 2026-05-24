@@ -25,7 +25,14 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       }
       const token = getAuthToken();
       if (!token) {
-        if (!cancelled) router.replace("/login");
+        if (!cancelled) {
+          // Always clear `checking` so the gate doesn't render an
+          // infinite "Loading…" if router.replace silently fails (fast-
+          // refresh, stale router, etc.). The render path below shows
+          // a recovery link instead.
+          setChecking(false);
+          router.replace("/login");
+        }
         return;
       }
       try {
@@ -35,7 +42,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           setChecking(false);
         }
       } catch {
-        if (!cancelled) router.replace("/login");
+        if (!cancelled) {
+          setChecking(false);
+          router.replace("/login");
+        }
       }
     }
     check();
@@ -48,7 +58,18 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   if (checking) {
     return <div className="p-8 text-slate-500">Loading…</div>;
   }
-  if (!me) return null;
+  if (!me) {
+    // checking has finished, fetchMe failed, router.replace hasn't taken
+    // us anywhere. Give the user an affordance instead of a white screen.
+    return (
+      <div className="space-y-2 p-8 text-slate-600">
+        <p>You&apos;re not signed in.</p>
+        <a href="/login" className="text-blue-600 hover:underline">
+          Go to sign in
+        </a>
+      </div>
+    );
+  }
 
   return (
     <>

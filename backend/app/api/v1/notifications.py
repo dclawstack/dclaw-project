@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List
 from uuid import UUID
 
@@ -11,7 +11,7 @@ from sqlalchemy import select, func, update
 
 from app.core.database import get_db
 from app.core.deps import AuthContext, require_workspace
-from app.core.security import decode_token
+from app.core.security import create_access_token, decode_token
 from app.models.notification import Notification, NotificationKind
 from app.repositories.user_repo import UserRepository
 from app.repositories.workspace_repo import WorkspaceMemberRepository
@@ -126,16 +126,54 @@ async def mark_notifications_read(
 # ---- SSE stream -----------------------------------------------------------
 
 
+# Short-lived stream token: minted via POST /events/token (which uses the
+# regular Bearer-auth header), then handed to `EventSource` as ?token=.
+# This keeps the long-lived JWT out of URLs, server access logs, browser
+# history, and Referer headers. The stream token TTL is intentionally
+# small — long enough to open the connection, short enough that a leaked
+# log line isn't useful.
+STREAM_TOKEN_TTL_SECONDS = 60
+STREAM_TOKEN_CLAIM = "stream"
+
+
+class StreamTokenResponse(BaseModel):
+    token: str
+    expires_in: int
+
+
+@events_router.post("/token", response_model=StreamTokenResponse)
+async def mint_stream_token(ctx: AuthContext = Depends(require_workspace)):
+    """Mint a short-lived token (60s) for the SSE stream.
+
+    Frontend flow: POST here with the long-lived Bearer JWT, get back a
+    one-minute stream token, then open `EventSource('/stream?token=…')`
+    with that. The stream token can only be used for /events/stream;
+    other endpoints reject it because it lacks the regular claims.
+    """
+    payload_token = create_access_token(
+        subject=str(ctx.user.id),
+        extra_claims={
+            "ws": str(ctx.workspace.id),
+            STREAM_TOKEN_CLAIM: True,
+        },
+    )
+    return StreamTokenResponse(
+        token=payload_token, expires_in=STREAM_TOKEN_TTL_SECONDS
+    )
+
+
 async def _auth_from_query(
     db: AsyncSession, request: Request
 ) -> AuthContext:
-    """SSE clients can't easily send custom headers from `EventSource`, so
-    we also accept the JWT via a `?token=...` query param. The auth
-    contract is identical to require_workspace; we just unwrap the token
-    from a different place."""
+    """Resolve the SSE caller from `?token=` (short-lived) or a Bearer header.
+
+    The query-param token MUST carry the `stream` claim (minted by
+    /events/token); a plain user JWT in `?token=` is rejected so we
+    never normalize the anti-pattern of long-lived bearers in URLs.
+    """
     token = request.query_params.get("token") or ""
-    if not token:
-        # Fall back to header for non-browser clients.
+    from_query = bool(token)
+    if not from_query:
         header = request.headers.get("authorization", "")
         if header.lower().startswith("bearer "):
             token = header.split(" ", 1)[1].strip()
@@ -144,6 +182,13 @@ async def _auth_from_query(
     payload = decode_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
+    if from_query and not payload.get(STREAM_TOKEN_CLAIM):
+        # Refuse a regular Bearer JWT presented via the URL; the caller
+        # must mint a stream token first.
+        raise HTTPException(
+            status_code=401,
+            detail="Use POST /events/token to mint a stream token first.",
+        )
     try:
         user_id = UUID(payload["sub"])
         workspace_id = UUID(payload["ws"])
@@ -179,14 +224,21 @@ async def event_stream(
             # before the first real event arrives.
             yield ": connected\n\n"
             while True:
+                # Poll for disconnect at most 2s late so a dead client
+                # doesn't hold a subscription open for the full 15s
+                # heartbeat window (per code-review finding D-5).
                 if await request.is_disconnected():
                     break
                 try:
-                    event = await asyncio.wait_for(sub.queue.get(), timeout=15.0)
+                    event = await asyncio.wait_for(sub.queue.get(), timeout=2.0)
                     yield event.as_sse()
                 except asyncio.TimeoutError:
-                    # Heartbeat keeps proxies + load balancers happy.
-                    yield ": keep-alive\n\n"
+                    # Heartbeat every ~15s (every ~7 poll cycles).
+                    if not hasattr(gen, "_ticks"):
+                        gen._ticks = 0  # type: ignore[attr-defined]
+                    gen._ticks = (getattr(gen, "_ticks", 0) + 1) % 7  # type: ignore[attr-defined]
+                    if gen._ticks == 0:  # type: ignore[attr-defined]
+                        yield ": keep-alive\n\n"
         finally:
             await bus.unsubscribe(sub)
 

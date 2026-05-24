@@ -48,6 +48,13 @@ async def _persist_and_publish(
     body: str = "",
     payload: dict | None = None,
 ) -> None:
+    """Insert a notification and publish a live event.
+
+    Persistence happens in a SAVEPOINT (begin_nested) so we don't
+    prematurely commit the caller's in-flight transaction. If the
+    notification insert fails the savepoint is rolled back without
+    poisoning the outer transaction.
+    """
     payload = payload or {}
     notif = Notification(
         workspace_id=workspace_id,
@@ -57,12 +64,11 @@ async def _persist_and_publish(
         body=body,
         payload=payload,
     )
-    db.add(notif)
     try:
-        await db.commit()
-        await db.refresh(notif)
-    except Exception as exc:  # pragma: no cover - DB hiccup
-        await db.rollback()
+        async with db.begin_nested():
+            db.add(notif)
+        await db.flush()
+    except Exception as exc:  # noqa: BLE001 — best-effort
         log.warning("notifier.persist_failed", error=str(exc))
         return
 
@@ -79,6 +85,19 @@ async def _persist_and_publish(
     )
 
 
+def _swallow_notifier_errors(coro_factory):
+    """Decorator-by-call: run a coroutine but never let its failure
+    escape to the caller. Notifier failures must not 5xx the underlying
+    request — see the module docstring."""
+    async def _runner(*args, **kwargs):
+        try:
+            await coro_factory(*args, **kwargs)
+        except Exception as exc:  # noqa: BLE001 — intentional
+            log.warning("notifier.failed", fn=coro_factory.__name__, error=str(exc))
+    return _runner
+
+
+@_swallow_notifier_errors
 async def notify_task_assigned(
     db: AsyncSession, *, workspace_id: UUID, actor_id: UUID, task: Task
 ) -> None:
@@ -96,6 +115,7 @@ async def notify_task_assigned(
     )
 
 
+@_swallow_notifier_errors
 async def notify_task_completed(
     db: AsyncSession, *, workspace_id: UUID, actor_id: UUID, task: Task
 ) -> None:
@@ -118,6 +138,7 @@ async def notify_task_completed(
     )
 
 
+@_swallow_notifier_errors
 async def notify_task_comment(
     db: AsyncSession,
     *,

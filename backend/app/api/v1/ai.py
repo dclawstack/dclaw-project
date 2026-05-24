@@ -256,13 +256,33 @@ async def generate_wbs(
         # parent_task_id. We only consume the first dep because the schema
         # only models one parent edge; the rest are returned in the response
         # for the UI to render but are not persisted as FKs.
-        for gt, task in zip(result.tasks, created_tasks):
+        #
+        # Cycle protection: an LLM can emit t0 → t1 and t1 → t0, which
+        # would persist a 2-node parent cycle that breaks every recursive
+        # walk downstream (risk model, UI subtree rendering, project_stats).
+        # We accumulate parent assignments and skip any that would close
+        # a cycle in the accumulating parent graph.
+        pending_parent: dict[int, int] = {}  # task index → parent index
+        for i, gt in enumerate(result.tasks):
             if not gt.depends_on:
                 continue
             for idx in gt.depends_on:
-                if 0 <= idx < len(created_tasks) and created_tasks[idx].id != task.id:
-                    task.parent_task_id = created_tasks[idx].id
+                if not (0 <= idx < len(result.tasks)) or idx == i:
+                    continue
+                # Walk up the proposed parent chain to check for a cycle.
+                cursor = idx
+                seen = {i}
+                cyclic = False
+                while cursor is not None and cursor not in seen:
+                    seen.add(cursor)
+                    cursor = pending_parent.get(cursor)
+                if cursor is None:
+                    pending_parent[i] = idx
                     break
+                # else: this candidate would close a cycle — try the next
+                # index in depends_on, or skip this task entirely
+        for i, parent_idx in pending_parent.items():
+            created_tasks[i].parent_task_id = created_tasks[parent_idx].id
 
         for gm in result.milestones:
             m = Milestone(

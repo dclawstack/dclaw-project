@@ -132,25 +132,32 @@ def compute_critical_path(
                 ready.append(succ)
     cycles = len(order) != len(durations)
     if cycles:
-        # Recovery path: include whatever ordering we managed, and fall
-        # back to a trivial schedule for the rest.
+        # Recovery path: append the un-scheduled nodes so the response
+        # still includes every task. Their schedule values will be the
+        # defaults below (0 / project_duration), and is_critical is
+        # forced to False since we can't trust the slack math on a cycle.
         order.extend(tid for tid in durations if tid not in order)
 
-    es: dict[UUID, int] = {}
-    ef: dict[UUID, int] = {}
+    # Initialize ALL nodes up-front so the forward/backward passes can
+    # safely .get() any predecessor / successor — without this, a cycle
+    # node whose neighbor wasn't topologically scheduled would raise
+    # KeyError in `ef[p]` / `ls[s]`.
+    es: dict[UUID, int] = {tid: 0 for tid in durations}
+    ef: dict[UUID, int] = {tid: durations[tid] for tid in durations}
     for tid in order:
         preds = predecessors.get(tid, [])
-        es[tid] = max((ef[p] for p in preds), default=0)
+        es[tid] = max((ef[p] for p in preds if p in ef), default=0)
         ef[tid] = es[tid] + durations[tid]
 
     project_duration = max(ef.values(), default=0)
 
     lf: dict[UUID, int] = {tid: project_duration for tid in durations}
-    ls: dict[UUID, int] = {}
+    ls: dict[UUID, int] = {tid: project_duration - durations[tid] for tid in durations}
     for tid in reversed(order):
         succs = successors.get(tid, [])
-        if succs:
-            lf[tid] = min(ls[s] for s in succs)
+        succ_starts = [ls[s] for s in succs if s in ls]
+        if succ_starts:
+            lf[tid] = min(succ_starts)
         ls[tid] = lf[tid] - durations[tid]
 
     schedule = [
@@ -163,7 +170,9 @@ def compute_critical_path(
             latest_start=ls[tid],
             latest_finish=lf[tid],
             slack=ls[tid] - es[tid],
-            is_critical=(ls[tid] - es[tid]) == 0,
+            # In a cyclic graph the slack math is meaningless — never
+            # claim a critical chain when we couldn't trust the topo sort.
+            is_critical=(not cycles) and (ls[tid] - es[tid]) == 0,
         )
         for tid in order
     ]

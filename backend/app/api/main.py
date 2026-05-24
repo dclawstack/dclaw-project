@@ -37,6 +37,8 @@ log = get_logger("dclaw.project")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("startup.begin", env=settings.app_env, sqlite=settings.is_sqlite)
+    # Refuse to boot in production with the hardcoded default JWT secret.
+    settings.assert_production_ready()
     await init_db()
     log.info("startup.ready", database_url=settings.database_url.split("@")[-1])
     yield
@@ -70,9 +72,12 @@ app = FastAPI(
 
 app.middleware("http")(request_id_middleware)
 
+# CORS: explicit origin list (no wildcard, since allow_credentials=True is
+# incompatible with `*` per the CORS spec). Operators override via the
+# CORS_ALLOW_ORIGINS env var.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

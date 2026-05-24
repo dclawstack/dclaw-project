@@ -56,6 +56,21 @@ async def setup_db():
         await conn.run_sync(Base.metadata.drop_all)
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def _reset_singletons():
+    """Drop process-global singletons (EventBus, integration stubs) between
+    tests so per-test event loops never see queues bound to a dead loop
+    and integration-stub state never bleeds across files."""
+    from app.services.event_bus import reset_event_bus
+    from app.services.integrations import reset_integrations
+
+    reset_event_bus()
+    reset_integrations()
+    yield
+    reset_event_bus()
+    reset_integrations()
+
+
 @pytest_asyncio.fixture
 async def unauthed_client():
     """Raw client with NO Authorization header. Use only for /auth/* tests

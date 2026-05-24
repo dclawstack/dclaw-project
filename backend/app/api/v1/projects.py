@@ -72,7 +72,11 @@ async def create_project(
     payload = data.model_dump(exclude={"tag_ids"})
     project = Project(workspace_id=ctx.workspace.id, **payload)
     if data.tag_ids:
-        project.tags = await tag_repo.get_many(data.tag_ids)
+        # Drop any ids that don't live in the caller's workspace so cross-
+        # tenant tag-id guessing can't attach foreign tags.
+        project.tags = await tag_repo.get_many_in_workspace(
+            data.tag_ids, ctx.workspace.id
+        )
     return await repo.create(project)
 
 
@@ -107,7 +111,9 @@ async def update_project(
     for field, value in payload.items():
         setattr(project, field, value)
     if tag_ids is not None:
-        project.tags = await tag_repo.get_many(tag_ids)
+        project.tags = await tag_repo.get_many_in_workspace(
+            tag_ids, ctx.workspace.id
+        )
     await db.commit()
     await db.refresh(project)
     return project
@@ -135,8 +141,15 @@ async def list_project_tasks(
 ):
     await _load_project_or_404(db, project_id, ctx)
     repo = TaskRepository(db)
+    # Pass workspace_id alongside project_id for defense-in-depth — if a
+    # future refactor weakens _load_project_or_404 the repo-level filter
+    # still prevents cross-tenant leaks.
     tasks, _ = await repo.search(
-        project_id=project_id, status=status_filter, limit=limit, offset=offset
+        workspace_id=ctx.workspace.id,
+        project_id=project_id,
+        status=status_filter,
+        limit=limit,
+        offset=offset,
     )
     return tasks
 

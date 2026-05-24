@@ -382,7 +382,16 @@ async def github_list_issues(ctx: AuthContext = Depends(require_workspace)):
 
 
 @integrations_router.post("/logto/validate")
-async def logto_validate(body: dict):
+async def logto_validate(
+    body: dict,
+    _: AuthContext = Depends(require_workspace),
+):
+    """Verify a Logto-issued JWT (stubbed today).
+
+    Requires DClaw auth: this endpoint is for an authenticated user to
+    confirm that an external token they were just issued is still valid
+    — NOT for anonymous identity probing.
+    """
     token = (body.get("token") or "").strip()
     user = get_logto().validate(token)
     if not user:
@@ -393,10 +402,43 @@ async def logto_validate(body: dict):
 # ---- 6.9 Document upload + summary ---------------------------------------
 
 
+# Hard cap on a single upload (10 MiB by default). Override via the
+# DCLAW_DOC_MAX_BYTES env var. We enforce streaming-style so a malicious
+# upload doesn't materialize 10 GB into RAM before we notice the size.
+DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
 def _docs_dir() -> Path:
     base = Path(os.environ.get("DCLAW_DOCS_DIR", "./uploads"))
     base.mkdir(parents=True, exist_ok=True)
     return base
+
+
+def _max_upload_bytes() -> int:
+    raw = os.environ.get("DCLAW_DOC_MAX_BYTES")
+    if not raw:
+        return DEFAULT_MAX_UPLOAD_BYTES
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return DEFAULT_MAX_UPLOAD_BYTES
+
+
+async def _read_with_cap(upload: UploadFile, cap: int) -> bytes:
+    """Stream the upload in chunks and abort as soon as we exceed `cap`."""
+    buf = bytearray()
+    chunk_size = 64 * 1024
+    while True:
+        chunk = await upload.read(chunk_size)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > cap:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Upload exceeds the {cap} byte limit",
+            )
+    return bytes(buf)
 
 
 class DocumentRead(BaseModel):
@@ -422,7 +464,7 @@ async def upload_document(
 ):
     if project_id:
         await _project_or_404(db, project_id, ctx)
-    raw = await file.read()
+    raw = await _read_with_cap(file, _max_upload_bytes())
     safe_name = f"{uuid.uuid4().hex}-{Path(file.filename or 'upload').name}"
     path = _docs_dir() / safe_name
     path.write_bytes(raw)

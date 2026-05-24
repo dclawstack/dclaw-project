@@ -49,7 +49,7 @@ async def start_timer(
     await _task_in_workspace(db, data.task_id, ctx)
     repo = TimeEntryRepository(db)
     # One active timer per user. Stop any pre-existing one cleanly.
-    active = await repo.active_for_user(ctx.user.id)
+    active = await repo.active_for_user(ctx.user.id, ctx.workspace.id)
     if active:
         now = _now()
         active.ended_at = now
@@ -81,7 +81,7 @@ async def stop_timer(
     ctx: AuthContext = Depends(require_workspace),
 ):
     repo = TimeEntryRepository(db)
-    active = await repo.active_for_user(ctx.user.id)
+    active = await repo.active_for_user(ctx.user.id, ctx.workspace.id)
     if not active:
         raise HTTPException(status_code=404, detail="No active timer")
     now = _now()
@@ -99,7 +99,9 @@ async def get_active_timer(
     db: AsyncSession = Depends(get_db),
     ctx: AuthContext = Depends(require_workspace),
 ):
-    return await TimeEntryRepository(db).active_for_user(ctx.user.id)
+    return await TimeEntryRepository(db).active_for_user(
+        ctx.user.id, ctx.workspace.id
+    )
 
 
 @router.post(
@@ -165,8 +167,13 @@ async def update_time_entry(
     ctx: AuthContext = Depends(require_workspace),
 ):
     repo = TimeEntryRepository(db)
-    entry = await repo.get_by_id(entry_id)
-    if not entry or entry.user_id != ctx.user.id:
+    # Only return the entry if it's in the caller's active workspace —
+    # multi-workspace users shouldn't be able to mutate entries from
+    # another tenant by holding only one workspace's token.
+    entry = await repo.get_for_user_in_workspace(
+        entry_id, ctx.user.id, ctx.workspace.id
+    )
+    if not entry:
         raise HTTPException(status_code=404, detail="Time entry not found")
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(entry, field, value)
@@ -189,8 +196,10 @@ async def delete_time_entry(
     ctx: AuthContext = Depends(require_workspace),
 ):
     repo = TimeEntryRepository(db)
-    entry = await repo.get_by_id(entry_id)
-    if not entry or entry.user_id != ctx.user.id:
+    entry = await repo.get_for_user_in_workspace(
+        entry_id, ctx.user.id, ctx.workspace.id
+    )
+    if not entry:
         raise HTTPException(status_code=404, detail="Time entry not found")
     await repo.hard_delete(entry)
     return None

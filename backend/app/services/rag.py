@@ -55,6 +55,13 @@ def embed_text(text: str) -> list[float]:
 
 
 def cosine(a: list[float], b: list[float]) -> float:
+    # Reject dimension mismatches loudly. Without this, a stored vector
+    # from a previous EMBED_DIM gets silently truncated by zip() and
+    # produces a meaningless similarity score (ranking goes to garbage
+    # with no exception). Return 0.0 so the mismatched chunk drops out
+    # of the result instead of muddying it.
+    if len(a) != len(b):
+        return 0.0
     return sum(x * y for x, y in zip(a, b))
 
 

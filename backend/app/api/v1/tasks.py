@@ -31,15 +31,19 @@ from app.services.notifier import (
 router = APIRouter()
 
 
-def _set_completed_at(task: Task) -> None:
-    """Stamp completion date when a task first reaches done.
+def _set_completed_at(task: Task, *, was_done: bool) -> None:
+    """Stamp completion date when a task TRANSITIONS into done.
 
-    Caller must only invoke this when `status` actually changed (so we don't
-    wipe history on unrelated edits). When status moves OFF done we leave
-    completed_at intact — it records when the work was finished, even if the
-    task is later reopened. The next done-transition will re-stamp it.
+    `was_done` is the status snapshot from BEFORE the patch was applied,
+    so the caller can tell us whether this is the first done-transition
+    in this request. On every done-transition (including re-completion
+    of a reopened task) we re-stamp completed_at to today so burndown
+    and velocity reflect when the work was actually finished.
+
+    When status moves OFF done we leave completed_at intact — it
+    records the most recent completion timestamp.
     """
-    if task.status == TaskStatus.done and task.completed_at is None:
+    if task.status == TaskStatus.done and not was_done:
         task.completed_at = date.today()
 
 
@@ -119,9 +123,12 @@ async def create_task(
     tag_repo = TagRepository(db)
     payload = data.model_dump(exclude={"tag_ids"})
     task = Task(**payload)
-    _set_completed_at(task)
+    # Fresh task: was_done=False so creating with status=done stamps today.
+    _set_completed_at(task, was_done=False)
     if data.tag_ids:
-        task.tags = await tag_repo.get_many(data.tag_ids)
+        task.tags = await tag_repo.get_many_in_workspace(
+            data.tag_ids, ctx.workspace.id
+        )
     created = await repo.create(task)
 
     publish_entity_event(
@@ -189,10 +196,11 @@ async def bulk_update_tasks(
     patch = data.patch.model_dump(exclude_unset=True)
     status_in_patch = "status" in patch
     for t in in_scope:
+        was_done = t.status == TaskStatus.done
         for field, value in patch.items():
             setattr(t, field, value)
         if status_in_patch:
-            _set_completed_at(t)
+            _set_completed_at(t, was_done=was_done)
     try:
         await db.commit()
     except Exception:
@@ -222,8 +230,35 @@ async def update_task(
     task = await _task_in_workspace(db, task_id, ctx)
     repo = TaskRepository(db)
     tag_repo = TagRepository(db)
-    if data.project_id is not None:
+    if data.project_id is not None and data.project_id != task.project_id:
         await _project_in_workspace(db, data.project_id, ctx)
+        # Reparenting a task to a different project while it still has
+        # subtasks would split the subtree across projects. Block it —
+        # callers should explicitly move the subtree first (or just
+        # not move tasks across projects, which is the common case).
+        # Explicit COUNT query (rather than `task.subtasks` lazy access)
+        # so the check works without re-entering the relationship loader
+        # in an unsafe async context.
+        from sqlalchemy import select as _select, func as _func
+
+        subtask_count = (
+            await db.execute(
+                _select(_func.count())
+                .select_from(Task)
+                .where(
+                    Task.parent_task_id == task.id,
+                    Task.deleted_at.is_(None),
+                )
+            )
+        ).scalar() or 0
+        if subtask_count:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Cannot change project_id on a task that has subtasks. "
+                    "Move or detach the subtasks first."
+                ),
+            )
     if data.parent_task_id is not None:
         if data.parent_task_id == task_id:
             raise HTTPException(status_code=400, detail="A task cannot be its own parent")
@@ -240,16 +275,22 @@ async def update_task(
     payload = data.model_dump(exclude_unset=True)
     tag_ids = payload.pop("tag_ids", None)
     status_changed = "status" in payload
+    # "assignee in payload" alone covers null→someone, someone→null, and
+    # someone→someone-else. We compare to the existing value so an idempotent
+    # PUT with the same assignee doesn't spam notifications.
     assignee_changed = (
-        "assignee" in payload and payload["assignee"] and payload["assignee"] != task.assignee
+        "assignee" in payload and payload["assignee"] != task.assignee
     )
     previous_status = task.status
+    was_done = task.status == TaskStatus.done
     for field, value in payload.items():
         setattr(task, field, value)
     if tag_ids is not None:
-        task.tags = await tag_repo.get_many(tag_ids)
+        task.tags = await tag_repo.get_many_in_workspace(
+            tag_ids, ctx.workspace.id
+        )
     if status_changed:
-        _set_completed_at(task)
+        _set_completed_at(task, was_done=was_done)
     await db.commit()
     await db.refresh(task)
 
@@ -258,7 +299,9 @@ async def update_task(
         kind="task.updated",
         payload={"task_id": str(task.id), "project_id": str(task.project_id)},
     )
-    if assignee_changed:
+    # Only notify when there's actually a new assignee to ping — the
+    # unassign case (someone → null) has no recipient.
+    if assignee_changed and task.assignee:
         await notify_task_assigned(
             db, workspace_id=ctx.workspace.id, actor_id=ctx.user.id, task=task
         )
