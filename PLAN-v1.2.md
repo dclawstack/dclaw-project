@@ -269,6 +269,8 @@ Every feature must ship with tests where applicable and keep `pytest backend/tes
 
 ## 8. Implementation Status (live)
 
+### v1.2.0 — C0 + C1 wave 1 (merged in PR #2)
+
 | # | Feature | Complexity | Status |
 |---|---------|------------|--------|
 | 4.0 | Local SQLite dev DB | C0 | ✅ |
@@ -284,12 +286,35 @@ Every feature must ship with tests where applicable and keep `pytest backend/tes
 | 4.10 | Frontend task UX polish | C0 | ✅ |
 | 5.1 | AI Copilot API + chat UI | C1 | ✅ |
 | 5.2 | AI WBS generator | C1 | ✅ |
-| 5.3 | Kanban board | C1 | ✅ (read-only — drag-drop pending) |
+| 5.3 | Kanban board (read-only) | C1 | ✅ |
 | 5.4 | Project health score | C1 | ✅ |
-| 5.5 | Burndown / velocity | C1 | ⏳ |
-| 5.6 | Time tracking | C1 | ⏳ |
-| 5.7 | SSE real-time | C1 | ⏳ |
-| 5.8 | Task dependencies | C1 | ⏳ |
-| 5.9 | Notifications | C1 | ⏳ |
-| 5.10 | Workspaces + auth | C1 | ⏳ |
-| 6.1–6.10 | C2 moats | C2 | ⏳ |
+
+### v1.2.1 — C1 wave 2 + C2 (this branch)
+
+| # | Feature | Complexity | Status |
+|---|---------|------------|--------|
+| 5.10 | Workspaces + JWT auth (full gating) | C1 | ✅ |
+| 5.8 | Task dependencies (FS/SS/FF/SF) | C1 | ✅ |
+| 5.5 | Burndown + velocity | C1 | ✅ |
+| 5.6 | Time tracking | C1 | ✅ |
+| 5.9 | Notifications | C1 | ✅ |
+| 5.7 | SSE real-time | C1 | ✅ |
+| 5.3+ | Kanban drag-and-drop | C1 | ✅ |
+| 6.3 | Critical path (backend) | C2 | ✅ |
+| 6.1 | Agentic planner (multi-step LLM) | C2 | ✅ |
+| 6.5 | Predictive risk model | C2 | ✅ |
+| 6.2 | RAG over project knowledge base | C2 | ✅ |
+| 6.4 | Resource leveling | C2 | ✅ |
+| 6.6 | Stripe billing (local stub) | C2 | ✅ |
+| 6.7 | Slack + GitHub integrations (local stub) | C2 | ✅ |
+| 6.8 | Logto OAuth (local stub) | C2 | ✅ |
+| 6.9 | Document upload + AI summary (local FS) | C2 | ✅ |
+| 6.10 | Sprint board | C2 | ✅ |
+
+Implementation order this branch will follow:
+1. **Auth foundation:** 5.10 first — every later route depends on it
+2. **Task graph:** 5.8 (dependencies) → 6.3 (critical path) — algorithmic spine
+3. **Activity surface:** 5.6 (time) → 5.5 (burndown) → 5.9 (notifications) → 5.7 (SSE)
+4. **Frontend polish:** 5.3+ (kanban DnD)
+5. **AI moats:** 6.1 (agent) → 6.5 (risk) → 6.2 (RAG) → 6.4 (leveling)
+6. **Integration stubs:** 6.9 (docs/local FS) → 6.6 (Stripe) → 6.7 (Slack/GH) → 6.8 (Logto) → 6.10 (sprints)

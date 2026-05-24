@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.deps import AuthContext, require_workspace
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.task_repo import TaskRepository
 from app.repositories.milestone_repo import MilestoneRepository
@@ -25,7 +26,18 @@ from app.models.task import TaskStatus
 router = APIRouter()
 
 
-@router.get("/", response_model=ProjectListResponse, summary="List projects with search/filter/pagination")
+async def _load_project_or_404(
+    db: AsyncSession, project_id: UUID, ctx: AuthContext
+) -> Project:
+    project = await ProjectRepository(db).get_by_id_in_workspace(
+        project_id, ctx.workspace.id
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
+@router.get("/", response_model=ProjectListResponse, summary="List projects in the active workspace")
 async def list_projects(
     q: str | None = Query(default=None, description="Search term on name/description"),
     status_filter: ProjectStatus | None = Query(default=None, alias="status"),
@@ -34,31 +46,47 @@ async def list_projects(
     limit: int = Query(default=20, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
+    ctx: AuthContext = Depends(require_workspace),
 ):
     repo = ProjectRepository(db)
     items, total = await repo.search(
-        q=q, status=status_filter, owner=owner, tag=tag, limit=limit, offset=offset
+        workspace_id=ctx.workspace.id,
+        q=q,
+        status=status_filter,
+        owner=owner,
+        tag=tag,
+        limit=limit,
+        offset=offset,
     )
     return ProjectListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.post("/", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
-async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)):
+async def create_project(
+    data: ProjectCreate,
+    db: AsyncSession = Depends(get_db),
+    ctx: AuthContext = Depends(require_workspace),
+):
     repo = ProjectRepository(db)
     tag_repo = TagRepository(db)
     payload = data.model_dump(exclude={"tag_ids"})
-    project = Project(**payload)
+    project = Project(workspace_id=ctx.workspace.id, **payload)
     if data.tag_ids:
-        project.tags = await tag_repo.get_many(data.tag_ids)
+        # Drop any ids that don't live in the caller's workspace so cross-
+        # tenant tag-id guessing can't attach foreign tags.
+        project.tags = await tag_repo.get_many_in_workspace(
+            data.tag_ids, ctx.workspace.id
+        )
     return await repo.create(project)
 
 
 @router.get("/{project_id}", response_model=ProjectDetailRead)
-async def get_project(project_id: UUID, db: AsyncSession = Depends(get_db)):
-    repo = ProjectRepository(db)
-    project = await repo.get_by_id_with_tasks_and_milestones(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+async def get_project(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    ctx: AuthContext = Depends(require_workspace),
+):
+    project = await _load_project_or_404(db, project_id, ctx)
     # Serialize from the soft-delete-filtered relationships so tombstoned
     # children don't leak into the public detail payload.
     payload = ProjectRead.model_validate(project).model_dump()
@@ -71,31 +99,34 @@ async def get_project(project_id: UUID, db: AsyncSession = Depends(get_db)):
 
 @router.put("/{project_id}", response_model=ProjectRead)
 async def update_project(
-    project_id: UUID, data: ProjectUpdate, db: AsyncSession = Depends(get_db)
+    project_id: UUID,
+    data: ProjectUpdate,
+    db: AsyncSession = Depends(get_db),
+    ctx: AuthContext = Depends(require_workspace),
 ):
-    repo = ProjectRepository(db)
+    project = await _load_project_or_404(db, project_id, ctx)
     tag_repo = TagRepository(db)
-    project = await repo.get_by_id(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
     payload = data.model_dump(exclude_unset=True)
     tag_ids = payload.pop("tag_ids", None)
     for field, value in payload.items():
         setattr(project, field, value)
     if tag_ids is not None:
-        project.tags = await tag_repo.get_many(tag_ids)
+        project.tags = await tag_repo.get_many_in_workspace(
+            tag_ids, ctx.workspace.id
+        )
     await db.commit()
     await db.refresh(project)
     return project
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_project(project_id: UUID, db: AsyncSession = Depends(get_db)):
-    repo = ProjectRepository(db)
-    project = await repo.get_by_id(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    await repo.delete(project)
+async def delete_project(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    ctx: AuthContext = Depends(require_workspace),
+):
+    project = await _load_project_or_404(db, project_id, ctx)
+    await ProjectRepository(db).delete(project)
     return None
 
 
@@ -106,10 +137,19 @@ async def list_project_tasks(
     limit: int = Query(default=200, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
+    ctx: AuthContext = Depends(require_workspace),
 ):
+    await _load_project_or_404(db, project_id, ctx)
     repo = TaskRepository(db)
+    # Pass workspace_id alongside project_id for defense-in-depth — if a
+    # future refactor weakens _load_project_or_404 the repo-level filter
+    # still prevents cross-tenant leaks.
     tasks, _ = await repo.search(
-        project_id=project_id, status=status_filter, limit=limit, offset=offset
+        workspace_id=ctx.workspace.id,
+        project_id=project_id,
+        status=status_filter,
+        limit=limit,
+        offset=offset,
     )
     return tasks
 
@@ -120,19 +160,21 @@ async def list_project_milestones(
     limit: int = Query(default=200, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
+    ctx: AuthContext = Depends(require_workspace),
 ):
+    await _load_project_or_404(db, project_id, ctx)
     repo = MilestoneRepository(db)
     milestones, _ = await repo.list_by_project(project_id, limit=limit, offset=offset)
     return milestones
 
 
 @router.get("/{project_id}/stats", response_model=ProjectStatsResponse)
-async def project_stats(project_id: UUID, db: AsyncSession = Depends(get_db)):
-    project_repo = ProjectRepository(db)
-    project = await project_repo.get_by_id(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
+async def project_stats(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    ctx: AuthContext = Depends(require_workspace),
+):
+    await _load_project_or_404(db, project_id, ctx)
     task_repo = TaskRepository(db)
     milestone_repo = MilestoneRepository(db)
     stats = await task_repo.project_stats(project_id)

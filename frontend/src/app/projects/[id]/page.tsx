@@ -26,8 +26,10 @@ import {
   getProject,
   createTask,
   projectStats,
+  updateTask,
   type ProjectDetail,
   type ProjectStats,
+  type Task,
   type TaskStatus,
   type TaskPriority,
 } from "@/lib/api";
@@ -82,6 +84,30 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function handleMove(taskId: string, newStatus: TaskStatus) {
+    if (!project) return;
+    const existing = project.tasks.find((t) => t.id === taskId);
+    if (!existing || existing.status === newStatus) return;
+    // Optimistic update: swap status in local state, roll back on failure.
+    const previousStatus = existing.status;
+    setProject({
+      ...project,
+      tasks: project.tasks.map((t) =>
+        t.id === taskId ? { ...t, status: newStatus } : t,
+      ),
+    });
+    try {
+      await updateTask(taskId, { status: newStatus });
+    } catch {
+      setProject({
+        ...project,
+        tasks: project.tasks.map((t) =>
+          t.id === taskId ? { ...t, status: previousStatus } : t,
+        ),
+      });
+    }
+  }
 
   async function handleCreateTask() {
     if (!taskForm.title) return;
@@ -335,10 +361,10 @@ export default function ProjectDetailPage() {
 
         <TabsContent value="board" className="space-y-4 pt-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            <KanbanColumn title="To Do" tasks={grouped.todo} />
-            <KanbanColumn title="In Progress" tasks={grouped.in_progress} />
-            <KanbanColumn title="Review" tasks={grouped.review} />
-            <KanbanColumn title="Done" tasks={grouped.done} />
+            <KanbanColumn title="To Do" status="todo" tasks={grouped.todo} onMove={handleMove} />
+            <KanbanColumn title="In Progress" status="in_progress" tasks={grouped.in_progress} onMove={handleMove} />
+            <KanbanColumn title="Review" status="review" tasks={grouped.review} onMove={handleMove} />
+            <KanbanColumn title="Done" status="done" tasks={grouped.done} onMove={handleMove} />
           </div>
         </TabsContent>
 
@@ -380,19 +406,46 @@ export default function ProjectDetailPage() {
 
 function KanbanColumn({
   title,
+  status,
   tasks,
+  onMove,
 }: {
   title: string;
+  status: TaskStatus;
   tasks: ProjectDetail["tasks"];
+  onMove: (taskId: string, newStatus: TaskStatus) => void;
 }) {
   return (
-    <div className="rounded-lg border bg-slate-50 p-3">
+    <div
+      className="rounded-lg border bg-slate-50 p-3 transition-colors"
+      onDragOver={(e) => {
+        e.preventDefault();
+        (e.currentTarget as HTMLDivElement).classList.add("bg-blue-50", "ring-2", "ring-blue-300");
+      }}
+      onDragLeave={(e) => {
+        (e.currentTarget as HTMLDivElement).classList.remove("bg-blue-50", "ring-2", "ring-blue-300");
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        (e.currentTarget as HTMLDivElement).classList.remove("bg-blue-50", "ring-2", "ring-blue-300");
+        const taskId = e.dataTransfer.getData("text/plain");
+        if (taskId) onMove(taskId, status);
+      }}
+    >
       <h3 className="mb-3 text-sm font-semibold text-slate-600">
         {title} <span className="text-slate-400">({tasks.length})</span>
       </h3>
       <div className="space-y-3">
         {tasks.map((task) => (
-          <Card key={task.id} className="bg-white">
+          <Card
+            key={task.id}
+            className="cursor-grab bg-white active:cursor-grabbing"
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData("text/plain", task.id);
+              e.dataTransfer.effectAllowed = "move";
+            }}
+          >
             <CardContent className="space-y-2 p-3">
               <Link
                 href={`/tasks/${task.id}`}

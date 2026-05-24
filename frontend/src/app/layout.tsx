@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
 import { CopilotWidget } from "@/components/copilot/CopilotWidget";
+import { AuthGate } from "@/components/auth/AuthGate";
 
 export const metadata: Metadata = {
   title: "DClaw Project",
@@ -40,11 +41,19 @@ export default function RootLayout({
               >
                 AI Planner
               </Link>
+              <Link
+                href="/search"
+                className="text-sm font-medium text-slate-600 hover:text-slate-900"
+              >
+                Search
+              </Link>
             </div>
           </div>
         </nav>
-        <main className="mx-auto max-w-7xl px-4 py-8">{children}</main>
-        <CopilotWidget />
+        <AuthGate>
+          <main className="mx-auto max-w-7xl px-4 py-8">{children}</main>
+          <CopilotWidget />
+        </AuthGate>
       </body>
     </html>
   );

@@ -1,3 +1,5 @@
+import { getAuthToken } from "./api";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 export type CopilotProvider = "openrouter" | "ollama" | "heuristic" | "fallback-template";
@@ -54,9 +56,12 @@ export interface GenerateWBSResponse {
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
   const resp = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   });
   if (!resp.ok) {
@@ -76,7 +81,10 @@ export async function copilotChat(
 }
 
 export async function projectHealth(projectId: string): Promise<ProjectHealthResponse> {
-  const resp = await fetch(`${API_BASE}/api/v1/ai/projects/${projectId}/health`);
+  const token = getAuthToken();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const resp = await fetch(`${API_BASE}/api/v1/ai/projects/${projectId}/health`, { headers });
   if (!resp.ok) throw new Error(`API error ${resp.status}`);
   return resp.json();
 }

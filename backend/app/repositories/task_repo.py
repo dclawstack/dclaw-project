@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func, or_
 
 from app.models.task import Task, TaskStatus, TaskPriority
+from app.models.project import Project
 from app.models.tag import Tag
 from app.repositories.base_repo import BaseRepository, escape_like, LIKE_ESCAPE
 
@@ -15,6 +16,7 @@ class TaskRepository(BaseRepository[Task]):
 
     async def search(
         self,
+        workspace_id: UUID | None = None,
         project_id: UUID | None = None,
         parent_task_id: UUID | None = None,
         q: str | None = None,
@@ -34,6 +36,15 @@ class TaskRepository(BaseRepository[Task]):
             .where(Task.deleted_at.is_(None))
         )
 
+        if workspace_id is not None:
+            stmt = stmt.join(Project, Project.id == Task.project_id).where(
+                Project.workspace_id == workspace_id,
+                Project.deleted_at.is_(None),
+            )
+            count_stmt = count_stmt.join(Project, Project.id == Task.project_id).where(
+                Project.workspace_id == workspace_id,
+                Project.deleted_at.is_(None),
+            )
         if project_id is not None:
             stmt = stmt.where(Task.project_id == project_id)
             count_stmt = count_stmt.where(Task.project_id == project_id)
@@ -72,49 +83,68 @@ class TaskRepository(BaseRepository[Task]):
     ) -> tuple[list[Task], int]:
         return await self.search(project_id=project_id, limit=limit, offset=offset)
 
-    async def list_due_today(self, today: date) -> list[Task]:
-        result = await self.db.execute(
-            select(Task).where(
-                and_(
-                    Task.due_date == today,
-                    Task.status != TaskStatus.done,
-                    Task.deleted_at.is_(None),
-                )
-            )
+    def _workspace_scope(self, base, workspace_id: UUID | None):
+        if workspace_id is None:
+            return base
+        return base.join(Project, Project.id == Task.project_id).where(
+            Project.workspace_id == workspace_id,
+            Project.deleted_at.is_(None),
         )
-        return list(result.scalars().all())
 
-    async def list_overdue(self, today: date) -> list[Task]:
-        result = await self.db.execute(
+    async def list_due_today(
+        self, today: date, workspace_id: UUID | None = None
+    ) -> list[Task]:
+        stmt = self._workspace_scope(
             select(Task).where(
-                and_(
-                    Task.due_date < today,
-                    Task.status != TaskStatus.done,
-                    Task.deleted_at.is_(None),
-                )
-            )
+                Task.due_date == today,
+                Task.status != TaskStatus.done,
+                Task.deleted_at.is_(None),
+            ),
+            workspace_id,
         )
-        return list(result.scalars().all())
+        result = await self.db.execute(stmt)
+        return list(result.scalars().unique().all())
 
-    async def list_due_within(self, start: date, end: date) -> list[Task]:
-        result = await self.db.execute(
+    async def list_overdue(
+        self, today: date, workspace_id: UUID | None = None
+    ) -> list[Task]:
+        stmt = self._workspace_scope(
             select(Task).where(
-                and_(
-                    Task.due_date >= start,
-                    Task.due_date <= end,
-                    Task.status != TaskStatus.done,
-                    Task.deleted_at.is_(None),
-                )
-            )
+                Task.due_date < today,
+                Task.status != TaskStatus.done,
+                Task.deleted_at.is_(None),
+            ),
+            workspace_id,
         )
-        return list(result.scalars().all())
+        result = await self.db.execute(stmt)
+        return list(result.scalars().unique().all())
 
-    async def count_by_status(self, status: TaskStatus) -> int:
-        result = await self.db.execute(
-            select(func.count()).where(
-                and_(Task.status == status, Task.deleted_at.is_(None))
-            )
+    async def list_due_within(
+        self, start: date, end: date, workspace_id: UUID | None = None
+    ) -> list[Task]:
+        stmt = self._workspace_scope(
+            select(Task).where(
+                Task.due_date >= start,
+                Task.due_date <= end,
+                Task.status != TaskStatus.done,
+                Task.deleted_at.is_(None),
+            ),
+            workspace_id,
         )
+        result = await self.db.execute(stmt)
+        return list(result.scalars().unique().all())
+
+    async def count_by_status(
+        self, status: TaskStatus, workspace_id: UUID | None = None
+    ) -> int:
+        stmt = self._workspace_scope(
+            select(func.count(func.distinct(Task.id))).where(
+                Task.status == status,
+                Task.deleted_at.is_(None),
+            ),
+            workspace_id,
+        )
+        result = await self.db.execute(stmt)
         return result.scalar() or 0
 
     async def get_many(self, ids: list[UUID]) -> list[Task]:

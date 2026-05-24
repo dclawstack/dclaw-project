@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.deps import AuthContext, require_workspace
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.task_repo import TaskRepository
 from app.repositories.milestone_repo import MilestoneRepository
@@ -48,8 +49,12 @@ class CopilotChatResponse(BaseModel):
     tokens_out: int | None = None
 
 
-async def _project_context(db: AsyncSession, project_id: UUID) -> str:
-    project = await ProjectRepository(db).get_by_id(project_id)
+async def _project_context(
+    db: AsyncSession, project_id: UUID, ctx: AuthContext
+) -> str:
+    project = await ProjectRepository(db).get_by_id_in_workspace(
+        project_id, ctx.workspace.id
+    )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     data = {
@@ -83,12 +88,14 @@ async def _project_context(db: AsyncSession, project_id: UUID) -> str:
 
 @router.post("/copilot/chat", response_model=CopilotChatResponse)
 async def copilot_chat(
-    body: CopilotChatRequest, db: AsyncSession = Depends(get_db)
+    body: CopilotChatRequest,
+    db: AsyncSession = Depends(get_db),
+    ctx: AuthContext = Depends(require_workspace),
 ):
     copilot = get_copilot()
     messages: list[ChatMessage] = [ChatMessage(role="system", content=SYSTEM_PROMPT)]
     if body.project_id:
-        context = await _project_context(db, body.project_id)
+        context = await _project_context(db, body.project_id, ctx)
         messages.append(
             ChatMessage(role="system", content="Project context:\n" + context)
         )
@@ -122,8 +129,14 @@ class ProjectHealthResponse(BaseModel):
 
 
 @router.get("/projects/{project_id}/health", response_model=ProjectHealthResponse)
-async def project_health(project_id: UUID, db: AsyncSession = Depends(get_db)):
-    project = await ProjectRepository(db).get_by_id(project_id)
+async def project_health(
+    project_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    ctx: AuthContext = Depends(require_workspace),
+):
+    project = await ProjectRepository(db).get_by_id_in_workspace(
+        project_id, ctx.workspace.id
+    )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     report = compute_health(project)
@@ -179,13 +192,19 @@ class GenerateWBSResponse(BaseModel):
 
 
 @router.post("/generate-wbs", response_model=GenerateWBSResponse)
-async def generate_wbs(body: GenerateWBSRequest, db: AsyncSession = Depends(get_db)):
+async def generate_wbs(
+    body: GenerateWBSRequest,
+    db: AsyncSession = Depends(get_db),
+    ctx: AuthContext = Depends(require_workspace),
+):
     from app.models.project import Project
 
     project_repo = ProjectRepository(db)
     existing_project_id = body.project_id
     if existing_project_id:
-        project = await project_repo.get_by_id(existing_project_id)
+        project = await project_repo.get_by_id_in_workspace(
+            existing_project_id, ctx.workspace.id
+        )
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
     else:
@@ -212,7 +231,11 @@ async def generate_wbs(body: GenerateWBSRequest, db: AsyncSession = Depends(get_
     created_milestones: list[Milestone] = []
     try:
         if project is None:
-            project = Project(name=body.project_name, owner=body.owner)
+            project = Project(
+                workspace_id=ctx.workspace.id,
+                name=body.project_name,
+                owner=body.owner,
+            )
             db.add(project)
             await db.flush()  # populate project.id without committing
 
@@ -233,13 +256,33 @@ async def generate_wbs(body: GenerateWBSRequest, db: AsyncSession = Depends(get_
         # parent_task_id. We only consume the first dep because the schema
         # only models one parent edge; the rest are returned in the response
         # for the UI to render but are not persisted as FKs.
-        for gt, task in zip(result.tasks, created_tasks):
+        #
+        # Cycle protection: an LLM can emit t0 → t1 and t1 → t0, which
+        # would persist a 2-node parent cycle that breaks every recursive
+        # walk downstream (risk model, UI subtree rendering, project_stats).
+        # We accumulate parent assignments and skip any that would close
+        # a cycle in the accumulating parent graph.
+        pending_parent: dict[int, int] = {}  # task index → parent index
+        for i, gt in enumerate(result.tasks):
             if not gt.depends_on:
                 continue
             for idx in gt.depends_on:
-                if 0 <= idx < len(created_tasks) and created_tasks[idx].id != task.id:
-                    task.parent_task_id = created_tasks[idx].id
+                if not (0 <= idx < len(result.tasks)) or idx == i:
+                    continue
+                # Walk up the proposed parent chain to check for a cycle.
+                cursor = idx
+                seen = {i}
+                cyclic = False
+                while cursor is not None and cursor not in seen:
+                    seen.add(cursor)
+                    cursor = pending_parent.get(cursor)
+                if cursor is None:
+                    pending_parent[i] = idx
                     break
+                # else: this candidate would close a cycle — try the next
+                # index in depends_on, or skip this task entirely
+        for i, parent_idx in pending_parent.items():
+            created_tasks[i].parent_task_id = created_tasks[parent_idx].id
 
         for gm in result.milestones:
             m = Milestone(

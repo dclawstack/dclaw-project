@@ -34,11 +34,20 @@ async def init_db() -> None:
     # Importing all models so their tables are registered on Base.metadata
     # before create_all runs (critical for SQLite dev mode + first boot).
     from app.models import (  # noqa: F401
+        user,
+        workspace,
         project,
         task,
         milestone,
         tag,
         comment,
+        task_dependency,
+        time_entry,
+        notification,
+        agent_run,
+        embedding,
+        document,
+        sprint,
     )
 
     async with engine.begin() as conn:
