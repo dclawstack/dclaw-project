@@ -5,12 +5,23 @@ silently regress. Includes the round-2 hardening findings on the
 SSE stream-token mechanism + migration bcrypt seed.
 """
 import io
+import os
 import pytest
 import bcrypt
 from datetime import date, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 from app.core.security import create_access_token, decode_token
+
+
+# Paths derived from this test file so the suite works in any working
+# directory — most importantly inside GitHub Actions where the repo
+# lives at /home/runner/work/dclaw-project/dclaw-project, not at the
+# local checkout root.
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = _BACKEND_ROOT.parent
+_FRONTEND_PUBLIC = _REPO_ROOT / "frontend" / "public"
 
 
 # ---- Fix #1: SECRET_KEY production guard ---------------------------------
@@ -496,11 +507,13 @@ def test_migration_legacy_password_hash_is_valid():
     # Read the migration source and ensure the fix is in place: hash is
     # computed at runtime (bcrypt.hashpw) and the old broken literal
     # never returns.
-    with open(
-        "/home/user/dclaw-project/backend/alembic/versions/"
-        "727eec711a17_add_users_workspaces_and_project_.py"
-    ) as f:
-        src = f.read()
+    migration = (
+        _BACKEND_ROOT
+        / "alembic"
+        / "versions"
+        / "727eec711a17_add_users_workspaces_and_project_.py"
+    )
+    src = migration.read_text()
     assert "bcrypt.hashpw" in src, (
         "Migration no longer computes the legacy password hash at "
         "runtime — operators will lose the documented recovery path."
@@ -565,20 +578,14 @@ def test_manifest_does_not_reference_nonexistent_icon():
     which didn't exist in frontend/public/. Removed the reference so
     DPanel doesn't 404 when loading the launcher tile."""
     import json
-    import os
 
-    manifest_path = (
-        "/home/user/dclaw-project/frontend/public/dclaw-manifest.json"
-    )
-    with open(manifest_path) as f:
-        manifest = json.load(f)
+    manifest_path = _FRONTEND_PUBLIC / "dclaw-manifest.json"
+    manifest = json.loads(manifest_path.read_text())
     if "icon" in manifest:
         # If we DO declare an icon, the asset MUST exist.
         icon_rel = manifest["icon"].lstrip("/")
-        icon_abs = os.path.join(
-            "/home/user/dclaw-project/frontend/public/", icon_rel
-        )
-        assert os.path.exists(icon_abs), (
+        icon_abs = _FRONTEND_PUBLIC / icon_rel
+        assert icon_abs.exists(), (
             f"manifest declares icon {manifest['icon']} but no file "
             f"at {icon_abs}"
         )
