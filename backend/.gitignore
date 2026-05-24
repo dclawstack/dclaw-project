@@ -42,3 +42,9 @@ htmlcov/
 # Alembic
 alembic/versions/*.py
 !alembic/versions/.gitkeep
+
+# Local SQLite dev / test database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

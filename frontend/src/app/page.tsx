@@ -24,13 +24,13 @@ export default function Home() {
   useEffect(() => {
     async function load() {
       try {
-        const [proj, due, over, comp] = await Promise.all([
-          listProjects(),
+        const [projResp, due, over, comp] = await Promise.all([
+          listProjects({ status: "active", limit: 50 }),
           tasksDueToday(),
           tasksOverdue(),
           completedTasksCount(),
         ]);
-        setProjects(proj.filter((p) => p.status === "active"));
+        setProjects(projResp.items);
         setDueToday(due);
         setOverdue(over);
         setCompleted(comp.count);
@@ -49,7 +49,12 @@ export default function Home() {
 
   return (
     <div className="space-y-8">
-      <h1 className="text-3xl font-bold">Dashboard</h1>
+      <div>
+        <h1 className="text-3xl font-bold">Dashboard</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          The autonomous project manager — at a glance.
+        </p>
+      </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">

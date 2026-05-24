@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import { CopilotWidget } from "@/components/copilot/CopilotWidget";
 
 export const metadata: Metadata = {
   title: "DClaw Project",
-  description: "DClaw Project — AI-assisted project management",
+  description: "DClaw Project — The autonomous AI project manager",
 };
 
 export default function RootLayout({
@@ -21,16 +22,29 @@ export default function RootLayout({
               DClaw Project
             </Link>
             <div className="flex gap-6">
-              <Link href="/" className="text-sm font-medium text-slate-600 hover:text-slate-900">
+              <Link
+                href="/"
+                className="text-sm font-medium text-slate-600 hover:text-slate-900"
+              >
                 Dashboard
               </Link>
-              <Link href="/projects" className="text-sm font-medium text-slate-600 hover:text-slate-900">
+              <Link
+                href="/projects"
+                className="text-sm font-medium text-slate-600 hover:text-slate-900"
+              >
                 Projects
+              </Link>
+              <Link
+                href="/plan"
+                className="text-sm font-medium text-slate-600 hover:text-slate-900"
+              >
+                AI Planner
               </Link>
             </div>
           </div>
         </nav>
         <main className="mx-auto max-w-7xl px-4 py-8">{children}</main>
+        <CopilotWidget />
       </body>
     </html>
   );

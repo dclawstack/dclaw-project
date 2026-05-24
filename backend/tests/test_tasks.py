@@ -55,7 +55,8 @@ async def test_list_tasks(client):
     response = await client.get("/api/v1/tasks/")
     assert response.status_code == 200
     data = response.json()
-    assert len(data) == 2
+    assert data["total"] == 2
+    assert len(data["items"]) == 2
 
 
 @pytest.mark.asyncio
