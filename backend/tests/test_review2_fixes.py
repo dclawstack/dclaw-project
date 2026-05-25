@@ -476,6 +476,7 @@ async def test_stream_token_is_not_accepted_as_bearer(client):
         transport=ASGITransport(app=app),
         base_url="http://test",
         headers={"Authorization": f"Bearer {stream_token}"},
+        follow_redirects=True,
     ) as ac:
         for path in [
             "/api/v1/projects/",

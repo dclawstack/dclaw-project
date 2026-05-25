@@ -28,6 +28,7 @@ from app.api.v1 import (
     integrations_router,
     documents_router,
     sprints_router,
+    seed_router,
 )
 
 configure_logging("DEBUG" if settings.debug else "INFO")
@@ -108,3 +109,6 @@ app.include_router(sprints_router, prefix="/api/v1/sprints", tags=["sprints"])
 app.include_router(milestones_router, prefix="/api/v1/milestones", tags=["milestones"])
 app.include_router(tags_router, prefix="/api/v1/tags", tags=["tags"])
 app.include_router(ai_router, prefix="/api/v1/ai", tags=["ai"])
+
+# Demo seed / clear — self-contained utility (see app/api/v1/seed.py).
+app.include_router(seed_router, prefix="/api/v1/seed", tags=["seed"])

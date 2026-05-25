@@ -70,7 +70,7 @@ async def _task_in_workspace(
 
 
 @router.get(
-    "/",
+    "",
     response_model=TaskListResponse,
     summary="List tasks (scoped to the active workspace) with search/filter/pagination",
 )
@@ -103,7 +103,7 @@ async def list_tasks(
     return TaskListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
-@router.post("/", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
 async def create_task(
     data: TaskCreate,
     db: AsyncSession = Depends(get_db),

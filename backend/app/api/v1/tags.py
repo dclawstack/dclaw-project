@@ -24,7 +24,7 @@ async def _tag_in_workspace(
     return tag
 
 
-@router.get("/", response_model=List[TagRead])
+@router.get("", response_model=List[TagRead])
 async def list_tags(
     db: AsyncSession = Depends(get_db),
     ctx: AuthContext = Depends(require_workspace),
@@ -32,7 +32,7 @@ async def list_tags(
     return await TagRepository(db).list_for_workspace(ctx.workspace.id)
 
 
-@router.post("/", response_model=TagRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=TagRead, status_code=status.HTTP_201_CREATED)
 async def create_tag(
     data: TagCreate,
     db: AsyncSession = Depends(get_db),

@@ -379,3 +379,25 @@ export async function updateTag(
 export async function deleteTag(id: string): Promise<void> {
   await fetchJson(`/api/v1/tags/${id}`, { method: "DELETE" });
 }
+
+// ----- Demo seed / clear (self-contained utility — see SeedControls.tsx) -----
+export interface SeedResult {
+  seeded: boolean;
+  access_token: string;
+  demo_email: string;
+  demo_password: string;
+  workspace: string;
+  projects: number;
+  tasks: number;
+  subtasks: number;
+  milestones: number;
+  comments: number;
+}
+
+export async function seedDemoData(): Promise<SeedResult> {
+  return fetchJson<SeedResult>("/api/v1/seed", { method: "POST" });
+}
+
+export async function clearDemoData(): Promise<{ cleared: boolean }> {
+  return fetchJson<{ cleared: boolean }>("/api/v1/seed", { method: "DELETE" });
+}

@@ -37,7 +37,7 @@ async def _load_project_or_404(
     return project
 
 
-@router.get("/", response_model=ProjectListResponse, summary="List projects in the active workspace")
+@router.get("", response_model=ProjectListResponse, summary="List projects in the active workspace")
 async def list_projects(
     q: str | None = Query(default=None, description="Search term on name/description"),
     status_filter: ProjectStatus | None = Query(default=None, alias="status"),
@@ -61,7 +61,7 @@ async def list_projects(
     return ProjectListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
-@router.post("/", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
 async def create_project(
     data: ProjectCreate,
     db: AsyncSession = Depends(get_db),

@@ -33,7 +33,7 @@ async def _milestone_in_workspace(
     return m
 
 
-@router.get("/", response_model=List[MilestoneRead])
+@router.get("", response_model=List[MilestoneRead])
 async def list_milestones(
     db: AsyncSession = Depends(get_db),
     ctx: AuthContext = Depends(require_workspace),
@@ -51,7 +51,7 @@ async def list_milestones(
     return out
 
 
-@router.post("/", response_model=MilestoneRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=MilestoneRead, status_code=status.HTTP_201_CREATED)
 async def create_milestone(
     data: MilestoneCreate,
     db: AsyncSession = Depends(get_db),

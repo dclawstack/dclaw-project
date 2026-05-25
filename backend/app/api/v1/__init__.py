@@ -11,6 +11,7 @@ from app.api.v1.analytics import router as analytics_router
 from app.api.v1.time_entries import router as time_entries_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.notifications import events_router
+from app.api.v1.seed import router as seed_router
 from app.api.v1.c2_routes import (
     agent_router,
     rag_router,
@@ -36,6 +37,7 @@ __all__ = [
     "time_entries_router",
     "notifications_router",
     "events_router",
+    "seed_router",
     "agent_router",
     "rag_router",
     "risk_router",

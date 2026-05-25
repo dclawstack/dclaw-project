@@ -76,7 +76,7 @@ async def unauthed_client():
     """Raw client with NO Authorization header. Use only for /auth/* tests
     and the unauthenticated-rejection regression tests."""
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app), base_url="http://test", follow_redirects=True
     ) as ac:
         yield ac
 
@@ -123,6 +123,7 @@ async def second_client(unauthed_client):
         transport=ASGITransport(app=app),
         base_url="http://test",
         headers={"Authorization": f"Bearer {token}"},
+        follow_redirects=True,
     ) as ac:
         ac.auth_response = resp.json()  # type: ignore[attr-defined]
         yield ac
