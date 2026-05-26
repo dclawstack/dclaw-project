@@ -1,38 +1,95 @@
-replicaCount: 1
+# Default values = DEV / local cluster. Reproduces the live dclaw-core deployment:
+# locally-built :local images (imagePullPolicy: Never), NodePort frontend, and the
+# shared dclaw-shared-postgres database. Plain `helm install dclaw-project ./helm
+# -n dclaw-core` brings the app up with no extra flags.
+#
+# For the cloud/GHCR deployment, override with: -f values-prod.yaml
 
-image:
-  backend:
-    repository: ghcr.io/dclawstack/dclaw-project-backend
-    tag: latest
-    pullPolicy: IfNotPresent
-  frontend:
-    repository: ghcr.io/dclawstack/dclaw-project-frontend
-    tag: latest
-    pullPolicy: IfNotPresent
+# Base name for all resources (defaults to the chart name: dclaw-project).
+nameOverride: ""
 
-service:
-  backend:
+backend:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: docker.io/library/dclaw-project-backend
+    tag: local
+    pullPolicy: Never
+  containerPort: 8100
+  service:
     type: ClusterIP
     port: 8100
-  frontend:
-    type: ClusterIP
-    port: 3010
+  env:
+    OTEL_SERVICE_NAME: dclaw-project
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://clickstack-otel-collector.observability.svc.cluster.local:4318
+    OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+    OTEL_RESOURCE_ATTRIBUTES: k8s.namespace.name=dclaw-core,deployment.environment=production
+    OTEL_TRACES_EXPORTER: otlp
+    OTEL_METRICS_EXPORTER: otlp
+    OTEL_LOGS_EXPORTER: otlp
+  livenessProbe:
+    path: /health/
+    initialDelaySeconds: 15
+    periodSeconds: 30
+  readinessProbe:
+    path: /health/ready
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
+frontend:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: docker.io/library/dclaw-project-frontend
+    tag: local
+    pullPolicy: Never
+  containerPort: 3045
+  service:
+    type: NodePort
+    port: 3045
+    nodePort: 30045
+  env:
+    PORT: "3045"
+    # Server-side rewrite target for /api/* and /health/* (next.config).
+    BACKEND_URL: http://dclaw-project-backend:8100
+    OTEL_SERVICE_NAME: dclaw-project-frontend
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://clickstack-otel-collector.observability.svc.cluster.local:4318
+    OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+    OTEL_RESOURCE_ATTRIBUTES: k8s.namespace.name=dclaw-core,deployment.environment=production
+    OTEL_TRACES_EXPORTER: otlp
+    OTEL_METRICS_EXPORTER: otlp
+    OTEL_LOGS_EXPORTER: otlp
+  readinessProbe:
+    path: /
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# App Secret (mounted into the backend via envFrom). Name defaults to <name>-secret.
+secret:
+  name: ""
+  data:
+    DATABASE_URL: postgresql+asyncpg://postgres:postgres@dclaw-shared-postgres:5432/dclaw_project
+    APP_ENV: production
+    SECRET_KEY: dclaw-project-local-secret-key
+
+# Cloud ingress — disabled for local/dev. Enabled in values-prod.yaml.
 ingress:
   enabled: false
-  className: ""
+  className: nginx
   annotations: {}
-  hosts: []
+  host: ""
   tls: []
-
-resources: {}
-
-autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 5
-  targetCPUUtilizationPercentage: 80
-
-nodeSelector: {}
-tolerations: []
-affinity: {}

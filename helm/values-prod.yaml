@@ -1,0 +1,31 @@
+# Cloud / production overrides. Use with:
+#   helm install dclaw-project ./helm -n <ns> -f values-prod.yaml
+#
+# Pulls published GHCR images, exposes the frontend via Ingress (cert-manager TLS)
+# instead of a NodePort. The DATABASE_URL in `secret.data` still points at the
+# shared postgres by default — override it here for a managed/cloud database.
+
+backend:
+  image:
+    repository: ghcr.io/dclawstack/dclaw-project-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+
+frontend:
+  image:
+    repository: ghcr.io/dclawstack/dclaw-project-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  host: project.dclawstack.io
+  tls:
+    - secretName: dclaw-project-tls
+      hosts:
+        - project.dclawstack.io
